@@ -1,0 +1,18 @@
+[package]
+name = "metronomo"
+version = "0.1.0"
+edition = "2024"
+description = "A desktop metronome built with Rust and GPUI"
+publish = false
+
+[dependencies]
+gpui-kit = "0.9.1"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unwrap_used = "deny"
+expect_used = "deny"

@@ -1,10 +1,15 @@
 use std::{sync::Arc, time::Duration};
 
-use super::audio::{self, AudioFactory, AudioPlayback, DEFAULT_VOLUME};
+use super::audio::{self, AudioFactory, AudioPlayback, DEFAULT_VOLUME, PlaybackPosition};
+use super::meter::{BeatSound, BeatUnit, Meter};
+
+mod meter_controls;
+use meter_controls::MeterFocus;
 
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, IconName, Sizable as _,
     button::{Button, ButtonVariants as _},
+    scroll::ScrollableElement as _,
     slider::{Slider, SliderEvent, SliderState},
 };
 use gpui_kit::{
@@ -35,19 +40,27 @@ pub(crate) fn init(cx: &mut App) {
         KeyBinding::new(
             "space",
             TogglePlayback,
-            Some("Metronome && !TempoControls && !VolumeControls"),
+            Some("Metronome && !TempoControls && !VolumeControls && !MeterControls"),
         ),
         KeyBinding::new(
             "enter",
             TogglePlayback,
-            Some("Metronome && !TempoControls && !VolumeControls"),
+            Some("Metronome && !TempoControls && !VolumeControls && !MeterControls"),
         ),
         KeyBinding::new("up", IncreaseVolume, Some("Metronome > VolumeControls")),
         KeyBinding::new("down", DecreaseVolume, Some("Metronome > VolumeControls")),
         KeyBinding::new("left", DecreaseVolume, Some("Metronome > VolumeControls")),
         KeyBinding::new("right", IncreaseVolume, Some("Metronome > VolumeControls")),
-        KeyBinding::new("up", IncreaseTempo, Some("Metronome && !VolumeControls")),
-        KeyBinding::new("down", DecreaseTempo, Some("Metronome && !VolumeControls")),
+        KeyBinding::new(
+            "up",
+            IncreaseTempo,
+            Some("Metronome && !VolumeControls && !MeterControls"),
+        ),
+        KeyBinding::new(
+            "down",
+            DecreaseTempo,
+            Some("Metronome && !VolumeControls && !MeterControls"),
+        ),
     ]);
 }
 
@@ -63,7 +76,11 @@ pub(crate) struct Metronome {
     volume: Entity<SliderState>,
     focus: FocusHandle,
     volume_focus: FocusHandle,
-    pulse_on: bool,
+    position: PlaybackPosition,
+    meter: Meter,
+    meter_focus: MeterFocus,
+    practice_scroll: gpui_kit::ScrollHandle,
+    tempo_focus: [FocusHandle; 2],
     playback: PlaybackState,
     audio: Option<Box<dyn AudioPlayback>>,
     audio_factory: AudioFactory,
@@ -112,12 +129,37 @@ impl Metronome {
         });
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
+        let practice_scroll = gpui_kit::ScrollHandle::default();
+        let meter_focus = MeterFocus::new(cx, &practice_scroll);
+        let tempo_focus = std::array::from_fn(|_| cx.focus_handle().tab_stop(true));
+        let mut subscriptions = vec![tempo_subscription, volume_subscription];
+        subscriptions.extend(meter_focus.observe(window, cx));
+        for focus in &tempo_focus {
+            let scroll = practice_scroll.clone();
+            let target = focus.clone();
+            subscriptions.push(cx.on_focus(focus, window, move |_, window, _| {
+                if window.last_input_was_keyboard() {
+                    let scroll = scroll.clone();
+                    let target = target.clone();
+                    window.on_next_frame(move |window, _| {
+                        if target.is_focused(window) {
+                            scroll.set_offset(Default::default());
+                            window.refresh();
+                        }
+                    });
+                }
+            }));
+        }
         Self {
             tempo,
             volume,
             focus,
             volume_focus: cx.focus_handle().tab_stop(true),
-            pulse_on: false,
+            position: PlaybackPosition::idle(),
+            meter: Meter::default(),
+            meter_focus,
+            practice_scroll,
+            tempo_focus,
             playback: PlaybackState::Stopped,
             audio: None,
             audio_factory,
@@ -125,7 +167,7 @@ impl Metronome {
             request: 0,
             _startup: None,
             _monitor: None,
-            _subscriptions: vec![tempo_subscription, volume_subscription],
+            _subscriptions: subscriptions,
         }
     }
 
@@ -162,8 +204,24 @@ impl Metronome {
                 self.bpm(cx) as u16,
                 self.volume(cx) as u8,
                 self.playback == PlaybackState::Running,
+                self.meter,
             );
         }
+    }
+
+    fn set_meter(&mut self, meter: Meter, cx: &mut Context<Self>) {
+        if self.meter.beats() != meter.beats() || self.meter.unit() != meter.unit() {
+            self.position = PlaybackPosition::idle();
+        }
+        self.meter = meter;
+        self.configure_audio(cx);
+        cx.notify();
+    }
+
+    fn set_sound(&mut self, beat: u8, sound: BeatSound, cx: &mut Context<Self>) {
+        self.meter = self.meter.with_sound(beat, sound);
+        self.configure_audio(cx);
+        cx.notify();
     }
 
     fn toggle_playback(&mut self, cx: &mut Context<Self>) {
@@ -172,7 +230,7 @@ impl Metronome {
             self._startup = None;
             self._monitor = None;
             self.playback = PlaybackState::Stopped;
-            self.pulse_on = false;
+            self.position = PlaybackPosition::idle();
             self.configure_audio(cx);
         } else if self.audio.is_some() {
             self.begin_playback(cx);
@@ -195,7 +253,7 @@ impl Metronome {
                             this.begin_playback(cx);
                         }
                         Err(error) => {
-                            eprintln!("Could not initialize audio: {error:?}");
+                            eprintln!("Audio output failed: {error:?}");
                             this.audio_error = Some(error.to_string());
                             this.playback = PlaybackState::Stopped;
                             cx.notify();
@@ -209,7 +267,7 @@ impl Metronome {
 
     fn begin_playback(&mut self, cx: &mut Context<Self>) {
         self.playback = PlaybackState::Running;
-        self.pulse_on = false;
+        self.position = PlaybackPosition::idle();
         self.configure_audio(cx);
         let executor = cx.background_executor().clone();
         self._monitor = Some(cx.spawn(async move |this, cx| {
@@ -219,18 +277,18 @@ impl Metronome {
                         return false;
                     };
                     match audio.poll(executor.now()) {
-                        Ok(pulse) => {
-                            if pulse != this.pulse_on {
-                                this.pulse_on = pulse;
+                        Ok(position) => {
+                            if position != this.position {
+                                this.position = position;
                                 cx.notify();
                             }
                             true
                         }
                         Err(error) => {
-                            eprintln!("Could not initialize audio: {error:?}");
+                            eprintln!("Audio output failed: {error:?}");
                             this.audio_error = Some(error.to_string());
                             this.audio = None;
-                            this.pulse_on = false;
+                            this.position = PlaybackPosition::idle();
                             this.playback = PlaybackState::Stopped;
                             cx.notify();
                             false
@@ -273,7 +331,7 @@ impl Metronome {
                             .test_support()
                             .aria_label(if self.playback == PlaybackState::Stopped {
                                 "Stopped"
-                            } else if self.pulse_on {
+                            } else if self.position.is_pulse() {
                                 "Beat"
                             } else {
                                 "Between beats"
@@ -282,7 +340,7 @@ impl Metronome {
                             .rounded(cx.theme().radius_full())
                             .border_1()
                             .border_color(cx.theme().border)
-                            .bg(if self.pulse_on {
+                            .bg(if self.position.is_pulse() {
                                 cx.theme().primary
                             } else {
                                 cx.theme().muted
@@ -304,6 +362,7 @@ impl Metronome {
     fn render_tempo_controls(&self, cx: &Context<Self>) -> impl IntoElement {
         let bpm = self.bpm(cx);
         let decrease = Button::new("decrease-tempo")
+            .track_focus(&self.tempo_focus[0])
             .icon(IconName::Minus)
             .accessibility_label("Decrease tempo")
             .tooltip("Decrease tempo (↓)")
@@ -314,6 +373,7 @@ impl Metronome {
                 this.adjust_tempo(-1., window, cx);
             }));
         let increase = Button::new("increase-tempo")
+            .track_focus(&self.tempo_focus[1])
             .icon(IconName::Plus)
             .accessibility_label("Increase tempo")
             .tooltip("Increase tempo (↑)")
@@ -327,9 +387,6 @@ impl Metronome {
         div()
             .flex()
             .flex_col()
-            .flex_1()
-            .min_h_0()
-            .justify_center()
             .gap_4()
             .child(
                 div()
@@ -362,7 +419,7 @@ impl Metronome {
                         div()
                             .text_sm()
                             .text_color(cx.theme().muted_foreground)
-                            .child("BPM"),
+                            .child("BPM · 1/4 note"),
                     ),
             )
             .child(
@@ -370,7 +427,9 @@ impl Metronome {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(Slider::new(&self.tempo).accessibility_label("Tempo in BPM"))
+                    .child(
+                        Slider::new(&self.tempo).accessibility_label("Tempo in quarter-note BPM"),
+                    )
                     .child(
                         div()
                             .id("tempo-range")
@@ -498,14 +557,36 @@ impl Render for Metronome {
             .flex()
             .flex_col()
             .size_full()
-            .p_4()
-            .gap_4()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .child(self.render_header(cx))
-            .child(self.render_tempo_controls(cx))
-            .child(self.render_volume(cx))
-            .child(self.render_transport(cx))
+            .child(div().p_4().child(self.render_header(cx)))
+            .child(
+                div()
+                    .id("practice-scroll")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.practice_scroll)
+                    .vertical_scrollbar(&self.practice_scroll)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .p_4()
+                            .gap_6()
+                            .child(self.render_tempo_controls(cx))
+                            .child(self.render_meter(cx)),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .p_4()
+                    .gap_4()
+                    .child(self.render_volume(cx))
+                    .child(self.render_transport(cx)),
+            )
     }
 }
 

@@ -17,10 +17,13 @@ Audio plays through the system's default output device. There is no published re
 
 ## Features
 
-- Tempo from **40 to 240 BPM**, starting at **120 BPM**.
+- Tempo from **40 to 240 BPM**, starting at **120 BPM**, with a fixed **quarter-note (1/4) reference**.
 - Slider for quick adjustment and −/+ buttons for changes of one BPM.
 - Synthesized percussive click through the default audio output, using its sample rate and format.
-- Start/stop button and a visual indicator driven by audio playback timestamps.
+- Start/stop button and numbered beat indicators driven by audio playback timestamps.
+- Configurable time signature: **1–12 beats per bar**, with half, quarter, eighth, or sixteenth-note units; **4/4** by default.
+- Independent **High**, **Medium**, **Low**, or **Muted** sound choice for every beat.
+- Accented first beat, with a persistent highlight and current-beat count during playback.
 - Volume from **0 to 100%**, starting at **60%**; zero mutes the click while the visual beat continues.
 - Live tempo changes preserve progress toward the next beat. Volume changes use a short gain ramp.
 - Keyboard operation, accessible control names, and light/dark theme support.
@@ -32,13 +35,23 @@ Audio plays through the system's default output device. There is no published re
 | `↑` / `↓` outside the volume control | Increase / decrease tempo by one BPM |
 | Arrow keys with volume focused | Adjust volume by five percentage points |
 | `Space` / `Enter` | Start/stop when the main view or playback button has focus |
-| `Tab` / `Shift+Tab` | Move between tempo buttons, volume, and playback |
+| `Tab` / `Shift+Tab` | Move between tempo, meter, beat-sound, volume, and playback controls |
+| `Enter` / `Space` on a meter or beat-sound control | Open its menu |
+| Arrow keys / `Enter` inside a menu | Navigate / select an option |
+| `Escape` inside a menu | Close it and return focus to its control |
 | `Space` / `Enter` on a −/+ button | Activate that button |
 | `Ctrl+Q` / `Cmd+Q` | Quit |
 
+### Meter and beat sounds
+
+Use **Beats per bar** to choose the number of beats and **Beat unit** to choose the denominator. BPM always refers to quarter notes (1/4). The selected note unit scales each numbered beat's duration: at 120 BPM, half notes (1/2) last 1 second, quarter notes (1/4) last 500 ms, eighth notes (1/8) last 250 ms, and sixteenth notes (1/16) last 125 ms. For example, 6/8 produces six eighth-note clicks per bar at twice the displayed quarter-note BPM; it does not automatically group them into two dotted-quarter beats.
+
+Select a numbered beat to choose its sound: High, Medium, Low, or Muted. The default pattern uses High on beat 1 and Medium on the remaining beats. Beat 1 has a stronger amplitude with any audible timbre; selecting Muted takes precedence over its accent. Muted beats still advance the count and visual indicator.
+
+The active beat remains highlighted between pulses, and the counter shows its position in the bar. Changing the time signature starts a new bar on the audio callback; changing a sound preserves the current beat progression. Shrinking and expanding a bar preserves the sound choices of hidden beats. Settings currently last for the application session.
+
 ### Planned features
 
-- Configurable beats per measure with an accented first beat.
 - Tap tempo.
 
 Feature scope and implementation order may change as development progresses.
@@ -90,7 +103,7 @@ cargo test --locked
 cargo clippy --all-targets --all-features --locked -- -D warnings
 ```
 
-Unit tests cover sample-frame timing, fractional BPM intervals, channel output, volume, mute, and latency-aware visual events. UI integration tests use the production view with a device-free audio session to cover controls, initialization cancellation, output failure/retry, and layout with larger text.
+Unit tests cover sample-frame timing, fractional BPM intervals, note-unit duration scaling, bar wrapping, per-beat timbres, first-beat accents, mute, volume, and latency-aware visual positions. UI integration tests use the production view with a device-free audio session to cover controls, initialization cancellation, output failure/retry, meter and per-beat sound menus, keyboard focus restoration, and layout with larger text.
 
 An opt-in test opens the **real default output** and plays quiet clicks for about two seconds:
 
@@ -98,7 +111,7 @@ An opt-in test opens the **real default output** and plays quiet clicks for abou
 cargo test --locked default_output_audio_smoke -- --ignored --nocapture
 ```
 
-The audio callback schedules beats independently of GPUI. The visual indicator uses CPAL's predicted playback time, including the reported output-buffer latency, and refreshes approximately every 16 ms. Actual visual alignment is limited by backend timestamp accuracy and display refresh. The stream stays open and produces silence while stopped, and closes with the view.
+The audio callback schedules beats independently of GPUI. The visual indicator uses CPAL's predicted playback time, including the reported output-buffer latency, and refreshes approximately every 16 ms. Visual pulses last up to 100 ms and shorten to half the click interval at faster note rates so successive beats remain distinct. Actual visual alignment is limited by backend timestamp accuracy and display refresh. The stream stays open and produces silence while stopped, and closes with the view.
 
 ## Project structure
 
@@ -109,11 +122,14 @@ src/
 │   └── mod.rs           # GPUI initialization, window options, and quit handling
 └── metronome/
     ├── mod.rs           # Feature boundary and deliberate re-exports
+    ├── meter.rs         # Time signature and per-beat sound model
     ├── audio.rs         # Default output, atomic controls, and playback timeline
     ├── audio/
     │   ├── renderer.rs  # Synthesized click and sample-frame beat scheduling
     │   └── tests.rs     # DSP, synchronization, and opt-in device tests
     ├── view.rs          # Tempo/volume controls and audio lifecycle
+    ├── view/
+    │   └── meter_controls.rs # Meter menus and numbered beat indicators
     └── tests.rs         # UI integration tests with a device-free audio session
 Cargo.toml              # Package metadata, dependencies, and lint policy
 Cargo.lock              # Resolved application dependencies; keep tracked
@@ -128,7 +144,7 @@ The application shell owns window lifecycle. The `metronome` module owns present
 - [x] Implement tempo controls and start/stop behavior.
 - [x] Add visual beat feedback.
 - [x] Add audible beats, volume, and synchronized visual feedback.
-- [ ] Add measure configuration and beat accents.
+- [x] Add time signatures, per-beat sounds, and first-beat accents.
 - [ ] Add tap tempo and keyboard shortcuts.
 - [ ] Validate playback timing and responsiveness on supported platforms.
 - [ ] Document installation and prepare the first release.

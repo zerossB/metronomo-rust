@@ -3,7 +3,7 @@
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -13,6 +13,8 @@ use cpal::{
     traits::{DeviceTrait as _, HostTrait as _, StreamTrait as _},
 };
 use rtrb::{Consumer, Producer, RingBuffer};
+
+use super::meter::Meter;
 
 mod renderer;
 use renderer::ClickRenderer;
@@ -31,13 +33,13 @@ pub(super) enum AudioError {
     #[error("The default output uses an unsupported audio format ({0}).")]
     UnsupportedFormat(SampleFormat),
     #[error("Audio output stopped. Check your output device and press Start to reconnect.")]
-    StreamFailed,
+    StreamFailed(cpal::ErrorKind),
 }
 
 /// The view controls playback through this seam; tests can supply a device-free session.
 pub(super) trait AudioPlayback: Send {
-    fn configure(&self, bpm: u16, volume: u8, playing: bool);
-    fn poll(&mut self, now: Instant) -> Result<bool, AudioError>;
+    fn configure(&self, bpm: u16, volume: u8, playing: bool, meter: Meter);
+    fn poll(&mut self, now: Instant) -> Result<PlaybackPosition, AudioError>;
 }
 
 pub(super) type AudioFactory =
@@ -49,29 +51,61 @@ struct Settings {
     volume: u8,
     playing: bool,
     generation: u32,
+    meter: Meter,
 }
 
 impl Settings {
     fn packed(self) -> u64 {
         u64::from(self.bpm.clamp(MIN_BPM, MAX_BPM))
-            | (u64::from(self.volume.min(100)) << 16)
-            | (u64::from(self.playing) << 24)
-            | (u64::from(self.generation) << 32)
+            | (u64::from(self.volume.min(100)) << 8)
+            | (u64::from(self.playing) << 15)
+            | (u64::from(self.meter.packed()) << 16)
+            | (u64::from(self.generation & GENERATION_MASK) << 46)
     }
 
     fn unpack(value: u64) -> Self {
         Self {
-            bpm: value as u16,
-            volume: (value >> 16) as u8,
-            playing: (value >> 24) & 1 != 0,
-            generation: (value >> 32) as u32,
+            bpm: (value & 255) as u16,
+            volume: ((value >> 8) & 127) as u8,
+            playing: (value >> 15) & 1 != 0,
+            meter: Meter::from_packed((value >> 16) as u32 & 0x3fff_ffff),
+            generation: (value >> 46) as u32,
         }
+    }
+}
+
+const GENERATION_MASK: u32 = (1 << 18) - 1;
+
+/// Current audible beat, retained between clicks; a pulse marks its short attack.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct PlaybackPosition {
+    beat: Option<u8>,
+    pulse: bool,
+}
+
+impl PlaybackPosition {
+    pub(super) fn idle() -> Self {
+        Self {
+            beat: None,
+            pulse: false,
+        }
+    }
+    pub(super) fn at_beat(beat: u8, pulse: bool) -> Self {
+        Self {
+            beat: Some(beat),
+            pulse,
+        }
+    }
+    pub(super) fn beat(self) -> Option<u8> {
+        self.beat
+    }
+    pub(super) fn is_pulse(self) -> bool {
+        self.pulse
     }
 }
 
 struct Controls {
     settings: AtomicU64,
-    failed: AtomicBool,
 }
 
 impl Controls {
@@ -83,10 +117,10 @@ impl Controls {
                     volume: DEFAULT_VOLUME,
                     playing: false,
                     generation: 0,
+                    meter: Meter::default(),
                 }
                 .packed(),
             ),
-            failed: AtomicBool::new(false),
         }
     }
 
@@ -95,10 +129,13 @@ impl Controls {
     }
 
     // Only the UI writes settings. One atomic snapshot keeps start/stop and BPM coherent.
-    fn configure(&self, bpm: u16, volume: u8, playing: bool) {
+    fn configure(&self, bpm: u16, volume: u8, playing: bool, meter: Meter) {
         let previous = self.load();
-        let generation = if previous.playing != playing {
-            previous.generation.wrapping_add(1)
+        let generation = if previous.playing != playing
+            || previous.meter.beats() != meter.beats()
+            || previous.meter.unit() != meter.unit()
+        {
+            previous.generation.wrapping_add(1) & GENERATION_MASK
         } else {
             previous.generation
         };
@@ -108,6 +145,7 @@ impl Controls {
                 volume,
                 playing,
                 generation,
+                meter,
             }
             .packed(),
             Ordering::Release,
@@ -118,19 +156,23 @@ impl Controls {
 #[derive(Clone, Copy, Debug)]
 struct Beat {
     at: Instant,
+    interval: Duration,
+    beat: u8,
     generation: u32,
 }
 
 struct Timeline {
     beats: Consumer<Beat>,
     pulse_until: Option<Instant>,
+    active_beat: Option<u8>,
     generation: u32,
 }
 
 impl Timeline {
-    fn poll(&mut self, now: Instant, settings: Settings) -> bool {
+    fn poll(&mut self, now: Instant, settings: Settings) -> PlaybackPosition {
         if !settings.playing || self.generation != settings.generation {
             self.pulse_until = None;
+            self.active_beat = None;
             self.generation = settings.generation;
         }
         // A full queue drops visual events only. Audio rendering never waits for the UI.
@@ -142,10 +184,18 @@ impl Timeline {
             if beat.at > now {
                 break;
             }
-            self.pulse_until = Some(beat.at + PULSE_DURATION);
+            self.active_beat = Some(beat.beat);
+            self.pulse_until = Some(beat.at + PULSE_DURATION.min(beat.interval / 2));
             let _ = self.beats.pop();
         }
-        settings.playing && self.pulse_until.is_some_and(|until| now < until)
+        if let Some(beat) = self.active_beat {
+            PlaybackPosition::at_beat(
+                beat,
+                settings.playing && self.pulse_until.is_some_and(|until| now < until),
+            )
+        } else {
+            PlaybackPosition::idle()
+        }
     }
 }
 
@@ -153,6 +203,7 @@ struct AudioOutput {
     _stream: Stream,
     controls: Arc<Controls>,
     timeline: Timeline,
+    errors: Consumer<cpal::ErrorKind>,
 }
 
 pub(super) fn open_default() -> Result<Box<dyn AudioPlayback>, AudioError> {
@@ -164,21 +215,97 @@ pub(super) fn open_default() -> Result<Box<dyn AudioPlayback>, AudioError> {
     let config = supported.config();
     let controls = Arc::new(Controls::new());
     let (producer, consumer) = RingBuffer::new(128);
+    let (error_producer, errors) = RingBuffer::new(8);
     let renderer = ClickRenderer::new(config.sample_rate);
     let stream = match format {
-        SampleFormat::F32 => build::<f32>(&device, config, renderer, controls.clone(), producer),
-        SampleFormat::F64 => build::<f64>(&device, config, renderer, controls.clone(), producer),
-        SampleFormat::I8 => build::<i8>(&device, config, renderer, controls.clone(), producer),
-        SampleFormat::I16 => build::<i16>(&device, config, renderer, controls.clone(), producer),
-        SampleFormat::I24 => {
-            build::<cpal::I24>(&device, config, renderer, controls.clone(), producer)
-        }
-        SampleFormat::I32 => build::<i32>(&device, config, renderer, controls.clone(), producer),
-        SampleFormat::I64 => build::<i64>(&device, config, renderer, controls.clone(), producer),
-        SampleFormat::U8 => build::<u8>(&device, config, renderer, controls.clone(), producer),
-        SampleFormat::U16 => build::<u16>(&device, config, renderer, controls.clone(), producer),
-        SampleFormat::U32 => build::<u32>(&device, config, renderer, controls.clone(), producer),
-        SampleFormat::U64 => build::<u64>(&device, config, renderer, controls.clone(), producer),
+        SampleFormat::F32 => build::<f32>(
+            &device,
+            config,
+            renderer,
+            controls.clone(),
+            producer,
+            error_producer,
+        ),
+        SampleFormat::F64 => build::<f64>(
+            &device,
+            config,
+            renderer,
+            controls.clone(),
+            producer,
+            error_producer,
+        ),
+        SampleFormat::I8 => build::<i8>(
+            &device,
+            config,
+            renderer,
+            controls.clone(),
+            producer,
+            error_producer,
+        ),
+        SampleFormat::I16 => build::<i16>(
+            &device,
+            config,
+            renderer,
+            controls.clone(),
+            producer,
+            error_producer,
+        ),
+        SampleFormat::I24 => build::<cpal::I24>(
+            &device,
+            config,
+            renderer,
+            controls.clone(),
+            producer,
+            error_producer,
+        ),
+        SampleFormat::I32 => build::<i32>(
+            &device,
+            config,
+            renderer,
+            controls.clone(),
+            producer,
+            error_producer,
+        ),
+        SampleFormat::I64 => build::<i64>(
+            &device,
+            config,
+            renderer,
+            controls.clone(),
+            producer,
+            error_producer,
+        ),
+        SampleFormat::U8 => build::<u8>(
+            &device,
+            config,
+            renderer,
+            controls.clone(),
+            producer,
+            error_producer,
+        ),
+        SampleFormat::U16 => build::<u16>(
+            &device,
+            config,
+            renderer,
+            controls.clone(),
+            producer,
+            error_producer,
+        ),
+        SampleFormat::U32 => build::<u32>(
+            &device,
+            config,
+            renderer,
+            controls.clone(),
+            producer,
+            error_producer,
+        ),
+        SampleFormat::U64 => build::<u64>(
+            &device,
+            config,
+            renderer,
+            controls.clone(),
+            producer,
+            error_producer,
+        ),
         _ => return Err(AudioError::UnsupportedFormat(format)),
     }
     .map_err(AudioError::Device)?;
@@ -186,9 +313,11 @@ pub(super) fn open_default() -> Result<Box<dyn AudioPlayback>, AudioError> {
     Ok(Box::new(AudioOutput {
         _stream: stream,
         controls,
+        errors,
         timeline: Timeline {
             beats: consumer,
             pulse_until: None,
+            active_beat: None,
             generation: 0,
         },
     }))
@@ -200,10 +329,10 @@ fn build<T: SizedSample + FromSample<f32>>(
     mut renderer: ClickRenderer,
     controls: Arc<Controls>,
     mut beats: Producer<Beat>,
+    mut errors: Producer<cpal::ErrorKind>,
 ) -> Result<Stream, cpal::Error> {
     let channels = usize::from(config.channels);
     let rate = f64::from(config.sample_rate);
-    let failures = controls.clone();
     device.build_output_stream(
         config,
         move |output: &mut [T], info| {
@@ -211,10 +340,15 @@ fn build<T: SizedSample + FromSample<f32>>(
             let timestamp = info.timestamp();
             let playback = now + timestamp.playback.duration_since(timestamp.callback);
             let settings = controls.load();
-            renderer.render(output, channels, settings, |offset| {
+            let interval = Duration::from_secs_f64(
+                60. * settings.meter.unit().quarter_notes() / f64::from(settings.bpm),
+            );
+            renderer.render(output, channels, settings, |offset, beat| {
                 let _ = beats.push(Beat {
                     at: playback + Duration::from_secs_f64(offset as f64 / rate),
+                    interval,
                     generation: settings.generation,
+                    beat,
                 });
             });
         },
@@ -222,20 +356,22 @@ fn build<T: SizedSample + FromSample<f32>>(
             cpal::ErrorKind::DeviceChanged
             | cpal::ErrorKind::Xrun
             | cpal::ErrorKind::RealtimeDenied => {}
-            _ => failures.failed.store(true, Ordering::Release),
+            _ => {
+                let _ = errors.push(error.kind());
+            }
         },
         Some(Duration::from_secs(3)),
     )
 }
 
 impl AudioPlayback for AudioOutput {
-    fn configure(&self, bpm: u16, volume: u8, playing: bool) {
-        self.controls.configure(bpm, volume, playing);
+    fn configure(&self, bpm: u16, volume: u8, playing: bool, meter: Meter) {
+        self.controls.configure(bpm, volume, playing, meter);
     }
 
-    fn poll(&mut self, now: Instant) -> Result<bool, AudioError> {
-        if self.controls.failed.load(Ordering::Acquire) {
-            return Err(AudioError::StreamFailed);
+    fn poll(&mut self, now: Instant) -> Result<PlaybackPosition, AudioError> {
+        if let Ok(kind) = self.errors.pop() {
+            return Err(AudioError::StreamFailed(kind));
         }
         Ok(self.timeline.poll(now, self.controls.load()))
     }

@@ -31,10 +31,10 @@ pub(crate) fn run() {
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(gpui_kit::Bounds::centered(
                     None,
-                    size(px(480.), px(440.)),
+                    size(px(480.), px(560.)),
                     cx,
                 ))),
-                window_min_size: Some(size(px(360.), px(400.))),
+                window_min_size: Some(size(px(360.), px(560.))),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Metronomo".into()),
                     ..Default::default()

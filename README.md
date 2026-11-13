@@ -4,9 +4,9 @@ A desktop metronome built with Rust and GPUI, designed to help musicians practic
 
 ## Project status
 
-**Early development.** The application provides BPM controls, start/stop commands, and a visual beat indicator in a theme-aware GPUI Kit window. Closing the last window or using `Ctrl+Q` / `Cmd+Q` exits the application.
+**Early development.** The application provides synthesized metronome clicks, BPM and volume controls, and a visual beat indicator in a theme-aware GPUI Kit window. Closing the last window or using `Ctrl+Q` / `Cmd+Q` exits the application.
 
-Audio output is not implemented yet. There is no published release.
+Audio plays through the system's default output device. There is no published release.
 
 ## Goals
 
@@ -19,23 +19,25 @@ Audio output is not implemented yet. There is no published release.
 
 - Tempo from **40 to 240 BPM**, starting at **120 BPM**.
 - Slider for quick adjustment and −/+ buttons for changes of one BPM.
-- Start/stop button and a visual indicator that pulses at the selected tempo.
-- Tempo changes during playback take effect immediately and restart the visual beat cycle.
+- Synthesized percussive click through the default audio output, using its sample rate and format.
+- Start/stop button and a visual indicator driven by audio playback timestamps.
+- Volume from **0 to 100%**, starting at **60%**; zero mutes the click while the visual beat continues.
+- Live tempo changes preserve progress toward the next beat. Volume changes use a short gain ramp.
 - Keyboard operation, accessible control names, and light/dark theme support.
 
 ### Keyboard controls
 
 | Key | Action |
 | --- | --- |
-| `↑` / `↓` | Increase / decrease tempo by one BPM |
+| `↑` / `↓` outside the volume control | Increase / decrease tempo by one BPM |
+| Arrow keys with volume focused | Adjust volume by five percentage points |
 | `Space` / `Enter` | Start/stop when the main view or playback button has focus |
-| `Tab` / `Shift+Tab` | Move between buttons |
+| `Tab` / `Shift+Tab` | Move between tempo buttons, volume, and playback |
 | `Space` / `Enter` on a −/+ button | Activate that button |
 | `Ctrl+Q` / `Cmd+Q` | Quit |
 
 ### Planned features
 
-- Audible clicks.
 - Configurable beats per measure with an accented first beat.
 - Tap tempo.
 
@@ -43,7 +45,7 @@ Feature scope and implementation order may change as development progresses.
 
 ## Technology
 
-The application uses **Rust 2024**, **Cargo**, and **GPUI** through **GPUI Kit**. The `gpui-kit` dependency supplies the framework, platform backend, styled components, and default assets through one facade. Audio playback dependencies have not been selected yet.
+The application uses **Rust 2024**, **Cargo**, and **GPUI** through **GPUI Kit**. The `gpui-kit` dependency supplies the framework, platform backend, styled components, and default assets through one facade. Audio uses **CPAL**, with a precomputed click and sample-frame scheduling. A bounded **rtrb** queue carries beat timestamps to the UI without blocking the audio callback.
 
 ## Getting started
 
@@ -53,12 +55,12 @@ The application uses **Rust 2024**, **Cargo**, and **GPUI** through **GPUI Kit**
 - A native compiler and linker for your operating system.
 - A graphical desktop session and a compatible graphics driver.
 
-On Linux, GPUI Kit enables both X11 and Wayland. Building requires `pkg-config` and development libraries for Fontconfig, FreeType, XKB, X11, and Wayland. Running requires a Vulkan-capable graphics driver. Package names vary by distribution.
+On Linux, GPUI Kit enables both X11 and Wayland. Building requires `pkg-config` and development libraries for Fontconfig, FreeType, XKB, X11, and Wayland. Running requires a Vulkan-capable graphics driver. CPAL also requires the ALSA development library (`libasound2-dev` on Ubuntu/Debian). Package names vary by distribution.
 
 On Ubuntu, the XKB bridge for X11 is provided by `libxkbcommon-x11-dev`. If linking fails with `unable to find library -lxkbcommon-x11`, install it:
 
 ```sh
-sudo apt-get install libxkbcommon-x11-dev
+sudo apt-get install libxkbcommon-x11-dev libasound2-dev
 ```
 
 Development currently targets Linux. macOS and Windows have not been validated for this application; GPUI's platform requirements still apply.
@@ -71,7 +73,7 @@ From the project root:
 cargo run --locked
 ```
 
-The first build downloads and compiles the GPUI dependency tree and can take several minutes. The application opens the metronome controls. Press Start to begin the visual pulse; it does not produce sound yet.
+The first build downloads and compiles the GPUI dependency tree and can take several minutes. The application opens the metronome controls. Press Start to open the default output and begin playback. The interface remains responsive while the device opens; Stop can cancel startup. Output failures are shown inline, and Start retries the connection.
 
 To build an optimized executable:
 
@@ -88,7 +90,15 @@ cargo test --locked
 cargo clippy --all-targets --all-features --locked -- -D warnings
 ```
 
-UI integration tests use the production view with GPUI's headless platform. They exercise pointer and keyboard controls, BPM bounds, focus navigation, pulse timing, cancellation, live tempo changes, and layout with larger text. Visual timing runs on the UI executor; it is not a real-time audio clock.
+Unit tests cover sample-frame timing, fractional BPM intervals, channel output, volume, mute, and latency-aware visual events. UI integration tests use the production view with a device-free audio session to cover controls, initialization cancellation, output failure/retry, and layout with larger text.
+
+An opt-in test opens the **real default output** and plays quiet clicks for about two seconds:
+
+```sh
+cargo test --locked default_output_audio_smoke -- --ignored --nocapture
+```
+
+The audio callback schedules beats independently of GPUI. The visual indicator uses CPAL's predicted playback time, including the reported output-buffer latency, and refreshes approximately every 16 ms. Actual visual alignment is limited by backend timestamp accuracy and display refresh. The stream stays open and produces silence while stopped, and closes with the view.
 
 ## Project structure
 
@@ -99,21 +109,25 @@ src/
 │   └── mod.rs           # GPUI initialization, window options, and quit handling
 └── metronome/
     ├── mod.rs           # Feature boundary and deliberate re-exports
-    ├── view.rs          # Tempo controls, retained state, and visual pulse task
-    └── tests.rs         # UI integration and deterministic timer tests
+    ├── audio.rs         # Default output, atomic controls, and playback timeline
+    ├── audio/
+    │   ├── renderer.rs  # Synthesized click and sample-frame beat scheduling
+    │   └── tests.rs     # DSP, synchronization, and opt-in device tests
+    ├── view.rs          # Tempo/volume controls and audio lifecycle
+    └── tests.rs         # UI integration tests with a device-free audio session
 Cargo.toml              # Package metadata, dependencies, and lint policy
 Cargo.lock              # Resolved application dependencies; keep tracked
 rust-toolchain.toml     # Reproducible Rust toolchain and development tools
 ```
 
-The application shell owns window lifecycle. The `metronome` module owns tempo state, presentation, and visual playback. Its retained task is canceled on stop, tempo changes, or view disposal. Keep related behavior together and add modules when they have a concrete responsibility.
+The application shell owns window lifecycle. The `metronome` module owns presentation and audio lifecycle. Opening the device runs off the UI thread. The audio callback reads one coherent atomic control snapshot and sends playback timestamps through a preallocated queue; it does not call GPUI, allocate, or acquire a mutex. The UI only follows the resulting playback timeline. Keep related behavior together and add modules when they have a concrete responsibility.
 
 ## Roadmap
 
 - [x] Initialize the Rust project and create a GPUI application window.
 - [x] Implement tempo controls and start/stop behavior.
 - [x] Add visual beat feedback.
-- [ ] Add audible beats.
+- [x] Add audible beats, volume, and synchronized visual feedback.
 - [ ] Add measure configuration and beat accents.
 - [ ] Add tap tempo and keyboard shortcuts.
 - [ ] Validate playback timing and responsiveness on supported platforms.

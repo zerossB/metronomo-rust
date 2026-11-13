@@ -6,7 +6,10 @@ description = "A desktop metronome built with Rust and GPUI"
 publish = false
 
 [dependencies]
+cpal = "0.18.2"
 gpui-kit = "0.9.1"
+rtrb = "0.4.1"
+thiserror = "2"
 
 [dev-dependencies]
 gpui-kit = { version = "0.9.1", features = ["test-support"] }

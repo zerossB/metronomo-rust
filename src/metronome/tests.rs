@@ -5,7 +5,7 @@
 
 use super::super::audio::{AudioError, AudioFactory, AudioPlayback};
 use super::{Meter, Metronome, PlaybackPosition, PlaybackState};
-use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
+use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{
     AnyWindowHandle, AppContext as _, Bounds, Entity, TestAppContext, WindowBounds, WindowOptions,
     point, px, size,
@@ -81,6 +81,14 @@ fn open_with_factory(
     cx: &mut TestAppContext,
     factory: AudioFactory,
 ) -> (AnyWindowHandle, Entity<Metronome>) {
+    open_with_preferences(cx, factory, super::Preferences::in_memory())
+}
+
+fn open_with_preferences(
+    cx: &mut TestAppContext,
+    factory: AudioFactory,
+    preferences: super::Preferences,
+) -> (AnyWindowHandle, Entity<Metronome>) {
     cx.update(|cx| {
         gpui_kit::init(cx);
         super::init(cx);
@@ -93,10 +101,218 @@ fn open_with_factory(
                 ..Default::default()
             },
             cx,
-            |window, cx| cx.new(|cx| Metronome::with_audio_factory(window, cx, factory)),
+            |window, cx| cx.new(|cx| Metronome::with_preferences(window, cx, factory, preferences)),
         )
         .expect("open UI test window")
     })
+}
+
+#[gpui_kit::test]
+fn preferences_survive_closing_and_reopening_including_taps_and_hidden_sounds(
+    cx: &mut TestAppContext,
+) {
+    use super::super::settings::{Preferences, SettingsStore};
+    let folder = tempfile::tempdir().expect("temporary settings");
+    let store = SettingsStore::new(folder.path().join("metronomo/settings.json"));
+    let state = Arc::new(Mutex::new(DeviceState::default()));
+    let device = state.clone();
+    let factory: AudioFactory = Arc::new(move || {
+        device.lock().expect("test device").opens += 1;
+        Ok(Box::new(TestPlayback(device.clone())))
+    });
+    let (handle, view) =
+        open_with_preferences(cx, factory.clone(), Preferences::from_store(store.clone()));
+    choose_menu_item(cx, handle, "beats-per-bar", "12 beats");
+    for (beat, sound) in [(1, "Low"), (2, "Muted"), (4, "High"), (12, "Low")] {
+        // Reveal controls beyond the initial scroll viewport through keyboard navigation.
+        if beat == 12 {
+            cx.update_window(handle, |_, window, cx| {
+                window.render_frame(cx);
+                let target = window.find(("beat-sound", 12_u32)).bounds();
+                window.scroll(
+                    "practice-scroll",
+                    gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.), -target.bottom())),
+                    cx,
+                );
+            })
+            .expect("reveal hidden sound control");
+        }
+        choose_menu_item(cx, handle, ("beat-sound", beat as u32), sound);
+    }
+    // Return to the top before choosing the time signature.
+    cx.update_window(handle, |_, window, cx| {
+        window.scroll(
+            "practice-scroll",
+            gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.), px(2000.))),
+            cx,
+        );
+    })
+    .expect("return to tempo and meter controls");
+    choose_menu_item(cx, handle, "beats-per-bar", "3 beats");
+    choose_menu_item(cx, handle, "beat-unit", "1/8 · Eighth note");
+    start(cx, handle);
+    cx.update_window(handle, |_, window, cx| {
+        let slider = ("slider", view.read(cx).volume.entity_id());
+        let bounds = window.find(slider).bounds();
+        window.click_at(slider, point(px(0.1), bounds.size.height / 2.), cx);
+        window.click("tap-tempo", cx);
+    })
+    .expect("mute and start tap measurement");
+    cx.run_until_parked();
+    cx.background_executor
+        .advance_clock(Duration::from_millis(375));
+    cx.update_window(handle, |_, window, cx| {
+        window.press("t", cx);
+        // Close immediately, before queued save work has a chance to run.
+        window.click("increase-tempo", cx);
+        window.click("increase-tempo", cx);
+        window.click("increase-tempo", cx);
+        window.click("decrease-tempo", cx);
+        assert_eq!(window.find("tempo-value").label(), Some("162 BPM"));
+        window.press("ctrl-w", cx);
+    })
+    .expect("save the last edits while closing");
+    cx.run_until_parked();
+    cx.update(|cx| assert!(!cx.windows().contains(&handle)));
+    assert!(!state.lock().expect("stopped device").playing);
+    assert_eq!(store.load().expect("saved settings").bpm(), 162);
+    let (handle, restored) = open_with_preferences(cx, factory, Preferences::from_store(store));
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        assert_eq!(window.find("tempo-value").label(), Some("162 BPM"));
+        assert_eq!(window.find("volume-value").label(), Some("0%"));
+        assert_eq!(window.find("current-beat").label(), Some("3 / 8"));
+        assert_eq!(window.find("playback-status").label(), Some("Stopped"));
+        assert_eq!(
+            window.find("tap-status").label(),
+            Some("Tap quarter notes · T")
+        );
+        assert_eq!(
+            window.find(("beat-sound", 1_u32)).label(),
+            Some("Beat 1: Low")
+        );
+        assert_eq!(
+            window.find(("beat-sound", 2_u32)).label(),
+            Some("Beat 2: Muted")
+        );
+        assert_eq!(restored.read(cx).meter.sound(11), super::BeatSound::Low);
+        assert_eq!(restored.read(cx).meter.sound(3), super::BeatSound::High);
+    })
+    .expect("restore all preferences without starting audio");
+    assert_eq!(state.lock().expect("device count").opens, 1);
+    start(cx, handle);
+    let state = state.lock().expect("restored output");
+    assert_eq!((state.bpm, state.volume), (162, 0));
+    assert_eq!(state.meter.beats(), 3);
+    assert_eq!(state.meter.unit(), super::BeatUnit::Eighth);
+    drop(state);
+    close(cx, handle);
+}
+
+#[gpui_kit::test]
+fn invalid_saved_settings_show_defaults_and_recover_after_an_edit(cx: &mut TestAppContext) {
+    use super::super::settings::{Preferences, SettingsStore};
+    let folder = tempfile::tempdir().expect("temporary settings");
+    let path = folder.path().join("settings.json");
+    std::fs::write(&path, b"{broken").expect("invalid settings");
+    let store = SettingsStore::new(path.clone());
+    let factory: AudioFactory = Arc::new(|| Err(AudioError::NoDevice));
+    let (handle, _) = open_with_preferences(cx, factory, Preferences::from_store(store.clone()));
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        assert_eq!(window.find("tempo-value").label(), Some("120 BPM"));
+        assert_eq!(
+            window.find("settings-message").label(),
+            Some("Couldn’t load saved settings. Using defaults.")
+        );
+    })
+    .expect("inspect recoverable load failure");
+    assert_eq!(std::fs::read(&path).expect("original file"), b"{broken");
+    cx.update_window(handle, |_, window, cx| window.click("increase-tempo", cx))
+        .expect("edit a recovered preference");
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        assert!(window.try_find("settings-message").is_none());
+    })
+    .expect("clear the error after a successful save");
+    assert_eq!(store.load().expect("repaired settings").bpm(), 121);
+    close(cx, handle);
+}
+
+#[gpui_kit::test]
+fn save_failures_remain_visible_and_retry_on_the_next_change(cx: &mut TestAppContext) {
+    use super::super::settings::{Preferences, SettingsStore};
+    let folder = tempfile::tempdir().expect("temporary settings");
+    let blocked = folder.path().join("blocked");
+    std::fs::write(&blocked, b"not a folder").expect("unwritable config parent");
+    let store = SettingsStore::new(blocked.join("settings.json"));
+    let factory: AudioFactory = Arc::new(|| Err(AudioError::NoDevice));
+    let (handle, _) = open_with_preferences(cx, factory, Preferences::from_store(store.clone()));
+    cx.update_window(handle, |_, window, cx| window.click("increase-tempo", cx))
+        .expect("attempt an autosave");
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        assert_eq!(
+            window.find("settings-message").label(),
+            Some("Couldn’t save settings. Check access to your configuration folder.")
+        );
+        assert_eq!(window.find("tempo-value").label(), Some("121 BPM"));
+    })
+    .expect("show a save failure without discarding the live setting");
+    std::fs::remove_file(blocked).expect("restore write access");
+    cx.update_window(handle, |_, window, cx| window.click("increase-tempo", cx))
+        .expect("retry on another change");
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        assert!(window.try_find("settings-message").is_none());
+    })
+    .expect("recover from a temporary save error");
+    assert_eq!(store.load().expect("saved after retry").bpm(), 122);
+    close(cx, handle);
+}
+
+#[gpui_kit::test]
+fn system_quit_flushes_the_latest_snapshot_without_requiring_a_live_window(
+    cx: &mut TestAppContext,
+) {
+    use super::super::settings::{Preferences, SettingsStore};
+    let folder = tempfile::tempdir().expect("temporary settings");
+    let store = SettingsStore::new(folder.path().join("settings.json"));
+    let factory: AudioFactory = Arc::new(|| Err(AudioError::NoDevice));
+    let (handle, _) = open_with_preferences(cx, factory, Preferences::from_store(store.clone()));
+    cx.update_window(handle, |_, window, cx| {
+        window.click("increase-tempo", cx);
+        window.click("increase-tempo", cx);
+    })
+    .expect("edit immediately before system quit");
+    cx.update(|cx| cx.shutdown());
+    assert_eq!(store.load().expect("shutdown snapshot").bpm(), 122);
+}
+
+#[gpui_kit::test]
+fn closing_without_edits_does_not_overwrite_an_invalid_settings_file(cx: &mut TestAppContext) {
+    use super::super::settings::{Preferences, SettingsStore};
+    let folder = tempfile::tempdir().expect("temporary settings");
+    let path = folder.path().join("settings.json");
+    std::fs::write(&path, b"{broken").expect("invalid settings");
+    let factory: AudioFactory = Arc::new(|| Err(AudioError::NoDevice));
+    let (handle, _) = open_with_preferences(
+        cx,
+        factory,
+        Preferences::from_store(SettingsStore::new(path.clone())),
+    );
+    close(cx, handle);
+    cx.update(|cx| cx.shutdown());
+    assert_eq!(std::fs::read(path).expect("original settings"), b"{broken");
+}
+
+fn close(cx: &mut TestAppContext, handle: AnyWindowHandle) {
+    cx.update_window(handle, |_, window, cx| window.press("ctrl-w", cx))
+        .expect("close the settings test window");
+    cx.run_until_parked();
 }
 
 fn start(cx: &mut TestAppContext, handle: AnyWindowHandle) {
@@ -129,6 +345,193 @@ fn adjusts_tempo_with_pointer_and_keyboard(cx: &mut TestAppContext) {
         assert_eq!(view.read(cx).bpm(cx), 120.);
     })
     .expect("interact with tempo controls");
+}
+
+#[gpui_kit::test]
+fn tap_tempo_combines_clicks_shortcuts_and_focused_button_activation(cx: &mut TestAppContext) {
+    let (handle, view, device) = open(cx);
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        window.click("tap-tempo", cx);
+        assert_eq!(window.find("tap-status").label(), Some("Tap again · T"));
+        assert_eq!(window.find("tempo-value").label(), Some("120 BPM"));
+    })
+    .expect("start tapping with the button");
+    cx.run_until_parked();
+    for (delay, key, bpm) in [(400, "t", 150.), (600, "enter", 120.), (500, "space", 120.)] {
+        cx.background_executor
+            .advance_clock(Duration::from_millis(delay));
+        cx.run_until_parked();
+        cx.update_window(handle, |_, window, cx| {
+            if key == "enter" {
+                for _ in 0..3 {
+                    window.press("tab", cx);
+                }
+                assert_eq!(window.find("tap-tempo").focused(), Some(true));
+            }
+            window.press(key, cx);
+            assert_eq!(view.read(cx).bpm(cx), bpm, "after {key}");
+            assert_eq!(window.find("tap-status").label(), Some("Keep tapping · T"));
+            assert_eq!(window.find("playback-status").label(), Some("Stopped"));
+        })
+        .expect("measure taps through each input path");
+        cx.run_until_parked();
+    }
+    assert_eq!(device.lock().expect("device state").opens, 0);
+}
+
+#[gpui_kit::test]
+fn held_tap_shortcut_counts_once_until_released(cx: &mut TestAppContext) {
+    let (handle, _, _) = open(cx);
+    cx.update_window(handle, |_, window, cx| {
+        window.key_down("t", false, cx);
+    })
+    .expect("press tap shortcut");
+    cx.run_until_parked();
+    cx.background_executor
+        .advance_clock(Duration::from_millis(500));
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| {
+        window.key_down("t", true, cx);
+        assert_eq!(window.find("tap-status").label(), Some("Tap again · T"));
+        window.key_up("t", cx);
+    })
+    .expect("ignore key repeat");
+    cx.background_executor
+        .advance_clock(Duration::from_millis(500));
+    cx.update_window(handle, |_, window, cx| {
+        window.press("t", cx);
+        assert_eq!(window.find("tempo-value").label(), Some("60 BPM"));
+    })
+    .expect("measure the next physical tap");
+}
+
+#[gpui_kit::test]
+fn tap_sequence_expires_after_inactivity_and_keeps_the_last_bpm(cx: &mut TestAppContext) {
+    let (handle, _, _) = open(cx);
+    for delay in [0, 400] {
+        cx.background_executor
+            .advance_clock(Duration::from_millis(delay));
+        cx.update_window(handle, |_, window, cx| window.press("t", cx))
+            .expect("tap a tempo");
+        cx.run_until_parked();
+    }
+    // The cancelled first timer must not clear a more recent tap sequence.
+    cx.background_executor
+        .advance_clock(Duration::from_millis(2999));
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        assert_eq!(window.find("tap-status").label(), Some("Keep tapping · T"));
+    })
+    .expect("keep taps until their deadline");
+    cx.background_executor
+        .advance_clock(Duration::from_millis(1));
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        assert_eq!(
+            window.find("tap-status").label(),
+            Some("Tap quarter notes · T")
+        );
+        assert_eq!(window.find("tempo-value").label(), Some("150 BPM"));
+        window.press("t", cx);
+        assert_eq!(window.find("tap-status").label(), Some("Tap again · T"));
+        assert_eq!(window.find("tempo-value").label(), Some("150 BPM"));
+    })
+    .expect("begin a fresh sequence after the pause");
+    cx.run_until_parked();
+    cx.background_executor
+        .advance_clock(Duration::from_millis(750));
+    cx.update_window(handle, |_, window, cx| {
+        window.press("t", cx);
+        assert_eq!(window.find("tempo-value").label(), Some("80 BPM"));
+    })
+    .expect("measure the fresh sequence");
+}
+
+#[gpui_kit::test]
+fn manual_tempo_edits_reset_taps_and_menus_do_not_receive_the_shortcut(cx: &mut TestAppContext) {
+    let (handle, view, _) = open(cx);
+    cx.update_window(handle, |_, window, cx| {
+        window.press("t", cx);
+        window.click("increase-tempo", cx);
+        assert_eq!(
+            window.find("tap-status").label(),
+            Some("Tap quarter notes · T")
+        );
+        window.press("t", cx);
+        let slider = ("slider", view.read(cx).tempo.entity_id());
+        let bounds = window.find(slider).bounds();
+        window.click_at(
+            slider,
+            point(bounds.size.width / 2., bounds.size.height / 2.),
+            cx,
+        );
+    })
+    .expect("edit tempo manually");
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        assert_eq!(
+            window.find("tap-status").label(),
+            Some("Tap quarter notes · T")
+        );
+        window.click("beat-unit", cx);
+    })
+    .expect("open the note unit menu");
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| {
+        window.press("t", cx);
+        assert_eq!(view.read(cx).tap_tempo.taps(), 0);
+        assert!(window.try_find("popup-menu").is_some());
+        window.press("escape", cx);
+    })
+    .expect("preserve menu keyboard handling");
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| {
+        window.press("t", cx);
+        assert_eq!(window.find("tap-status").label(), Some("Tap again · T"));
+    })
+    .expect("restore the shortcut after closing the menu");
+}
+
+#[gpui_kit::test]
+fn tap_tempo_updates_running_audio_in_quarter_notes_without_restarting_the_bar(
+    cx: &mut TestAppContext,
+) {
+    let (handle, view, device) = open(cx);
+    choose_menu_item(cx, handle, "beat-unit", "1/8 · Eighth note");
+    start(cx, handle);
+    {
+        let mut state = device.lock().expect("device state");
+        state.beat = Some(2);
+        state.pulse = true;
+    }
+    refresh_audio(cx);
+    cx.update_window(handle, |_, window, cx| {
+        window.click("tap-tempo", cx);
+    })
+    .expect("start tapping during playback");
+    cx.run_until_parked();
+    cx.background_executor
+        .advance_clock(Duration::from_millis(600));
+    cx.run_until_parked();
+    cx.update_window(handle, |_, window, cx| {
+        window.press("t", cx);
+        assert_eq!(window.find("tempo-value").label(), Some("100 BPM"));
+        assert_eq!(window.find("current-beat").label(), Some("Beat 3 of 4"));
+        assert_eq!(view.read(cx).tempo.read(cx).value().end(), 100.);
+        assert_eq!(window.find("playback-status").label(), Some("Running"));
+    })
+    .expect("apply measured tempo without moving the playhead");
+    let state = device.lock().expect("device state");
+    assert_eq!(state.bpm, 100);
+    assert_eq!(state.meter.unit(), super::BeatUnit::Eighth);
+    assert_eq!(state.beat, Some(2));
+    assert_eq!(state.volume, 60);
+    assert_eq!(state.opens, 1);
+    assert!(state.playing);
 }
 
 #[gpui_kit::test]
@@ -289,6 +692,8 @@ fn tab_and_arrow_keys_keep_volume_and_playback_reachable(cx: &mut TestAppContext
         assert_eq!(window.find("tempo-value").label(), Some("119 BPM"));
         window.press("tab", cx);
         assert_eq!(window.find("increase-tempo").focused(), Some(true));
+        window.press("tab", cx);
+        assert_eq!(window.find("tap-tempo").focused(), Some(true));
         for _ in 0..7 {
             window.press("tab", cx);
         }
@@ -588,6 +993,20 @@ fn render_meter_previews() {
             .save(std::env::temp_dir().join(format!("metronomo-meter-{name}.png")))
             .expect("save preview");
         if name == "dark" {
+            cx.update_window(handle, |_, window, cx| window.click("tap-tempo", cx))
+                .expect("start preview tap sequence");
+            cx.run_until_parked();
+            cx.advance_clock(Duration::from_millis(375));
+            cx.update_window(handle, |_, window, cx| {
+                window.click("tap-tempo", cx);
+                assert_eq!(window.find("tempo-value").label(), Some("160 BPM"));
+                assert_eq!(window.find("tap-status").label(), Some("Keep tapping · T"));
+            })
+            .expect("measure preview tempo");
+            cx.capture_screenshot(handle)
+                .expect("render active tap tempo")
+                .save(std::env::temp_dir().join("metronomo-tap-active.png"))
+                .expect("save tap tempo preview");
             cx.update_window(handle, |_, window, cx| {
                 window.click(("beat-sound", 3_u32), cx)
             })
@@ -646,8 +1065,94 @@ fn all_twelve_beat_controls_remain_reachable_in_a_small_zoomed_window(cx: &mut T
     cx.update_window(handle, |_, window, cx| {
         window.simulate_next_frame(cx);
         window.render_frame(cx);
+        assert_eq!(window.find("tap-tempo").focused(), Some(true));
+        assert!(window.find("tap-tempo").visible());
+        window.press("shift-tab", cx);
         assert_eq!(window.find("increase-tempo").focused(), Some(true));
         assert!(window.find("increase-tempo").visible());
     })
     .expect("reveal the tempo controls when navigating back");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "Opens a real desktop window to minimize, restore, and close it through the title bar."]
+fn native_window_controls_smoke() {
+    use gpui_kit::{WindowDecorations, component::TitleBar};
+    use std::{cell::Cell, rc::Rc};
+    let closed = Rc::new(Cell::new(false));
+    let minimized = Rc::new(Cell::new(false));
+    let did_close = closed.clone();
+    let did_minimize = minimized.clone();
+    gpui_kit::application()
+        .with_assets(gpui_kit::assets::Assets)
+        .run(move |cx| {
+            gpui_kit::init(cx);
+            super::init(cx);
+            let (handle, _) = gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                        None,
+                        size(px(600.), px(780.)),
+                        cx,
+                    ))),
+                    window_decorations: Some(WindowDecorations::Client),
+                    ..TitleBar::window_options()
+                },
+                cx,
+                |window, cx| {
+                    cx.new(|cx| {
+                        Metronome::with_audio_factory(
+                            window,
+                            cx,
+                            Arc::new(|| Err(AudioError::NoDevice)),
+                        )
+                    })
+                },
+            )
+            .expect("open native control test");
+            cx.on_window_closed(move |cx, _| {
+                did_close.set(true);
+                cx.quit();
+            })
+            .detach();
+            cx.activate(true);
+            cx.spawn(async move |cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(500))
+                    .await;
+                cx.update_window(handle, |_, window, cx| {
+                    window.render_frame(cx);
+                    assert!(window.find("minimize").visible());
+                    assert!(window.find("close").visible());
+                    window.click("minimize", cx);
+                })
+                .expect("minimize through the title bar");
+                cx.background_executor()
+                    .timer(Duration::from_millis(500))
+                    .await;
+                cx.update_window(handle, |_, window, _| {
+                    assert!(
+                        !window.is_window_active(),
+                        "minimized window must lose activation"
+                    );
+                    did_minimize.set(true);
+                    window.activate_window();
+                })
+                .expect("restore the minimized window");
+                cx.background_executor()
+                    .timer(Duration::from_millis(500))
+                    .await;
+                cx.update_window(handle, |_, window, cx| window.click("close", cx))
+                    .expect("close through the title bar");
+            })
+            .detach();
+            cx.spawn(async move |cx| {
+                cx.background_executor().timer(Duration::from_secs(8)).await;
+                cx.update(|cx| cx.quit());
+            })
+            .detach();
+        });
+    assert!(minimized.get(), "native minimize flow did not finish");
+    assert!(closed.get(), "native close flow did not finish");
 }

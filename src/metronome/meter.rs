@@ -2,7 +2,8 @@
 
 pub(super) const MAX_BEATS: u8 = 12;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub(super) enum BeatSound {
     High,

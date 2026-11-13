@@ -4308,8 +4308,12 @@ name = "metronomo"
 version = "0.1.0"
 dependencies = [
  "cpal",
+ "dirs 6.0.0",
  "gpui-kit",
  "rtrb",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 

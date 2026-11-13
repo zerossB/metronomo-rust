@@ -4,11 +4,9 @@ A desktop metronome built with Rust and GPUI, designed to help musicians practic
 
 ## Project status
 
-**Early development.** The Rust project is initialized with a GPUI Kit application window, theme-aware presentation, and application lifecycle handling. Closing the last window or using `Ctrl+Q` / `Cmd+Q` exits the application.
+**Early development.** The application provides BPM controls, start/stop commands, and a visual beat indicator in a theme-aware GPUI Kit window. Closing the last window or using `Ctrl+Q` / `Cmd+Q` exits the application.
 
-Playback, tempo controls, and audio output are not implemented yet. There is no published release.
-
-The features below describe the intended direction, not functionality available today.
+Audio output is not implemented yet. There is no published release.
 
 ## Goals
 
@@ -17,13 +15,29 @@ The features below describe the intended direction, not functionality available 
 - Deliver consistent audible beats with clear visual feedback.
 - Keep the application responsive during playback.
 
-## Planned features
+## Features
 
-- Adjustable tempo in beats per minute (BPM).
-- Start and stop controls.
-- Audible clicks and a visual beat indicator.
+- Tempo from **40 to 240 BPM**, starting at **120 BPM**.
+- Slider for quick adjustment and −/+ buttons for changes of one BPM.
+- Start/stop button and a visual indicator that pulses at the selected tempo.
+- Tempo changes during playback take effect immediately and restart the visual beat cycle.
+- Keyboard operation, accessible control names, and light/dark theme support.
+
+### Keyboard controls
+
+| Key | Action |
+| --- | --- |
+| `↑` / `↓` | Increase / decrease tempo by one BPM |
+| `Space` / `Enter` | Start/stop when the main view or playback button has focus |
+| `Tab` / `Shift+Tab` | Move between buttons |
+| `Space` / `Enter` on a −/+ button | Activate that button |
+| `Ctrl+Q` / `Cmd+Q` | Quit |
+
+### Planned features
+
+- Audible clicks.
 - Configurable beats per measure with an accented first beat.
-- Tap tempo and keyboard shortcuts.
+- Tap tempo.
 
 Feature scope and implementation order may change as development progresses.
 
@@ -57,7 +71,7 @@ From the project root:
 cargo run --locked
 ```
 
-The first build downloads and compiles the GPUI dependency tree and can take several minutes. The application opens a starter window; it does not produce sound yet.
+The first build downloads and compiles the GPUI dependency tree and can take several minutes. The application opens the metronome controls. Press Start to begin the visual pulse; it does not produce sound yet.
 
 To build an optimized executable:
 
@@ -70,10 +84,11 @@ cargo build --release --locked
 ```sh
 cargo fmt --all -- --check
 cargo check --all-targets --locked
+cargo test --locked
 cargo clippy --all-targets --all-features --locked -- -D warnings
 ```
 
-There are no automated behavior tests yet. Add focused tests alongside playback and tempo logic as those features are introduced.
+UI integration tests use the production view with GPUI's headless platform. They exercise pointer and keyboard controls, BPM bounds, focus navigation, pulse timing, cancellation, live tempo changes, and layout with larger text. Visual timing runs on the UI executor; it is not a real-time audio clock.
 
 ## Project structure
 
@@ -84,19 +99,21 @@ src/
 │   └── mod.rs           # GPUI initialization, window options, and quit handling
 └── metronome/
     ├── mod.rs           # Feature boundary and deliberate re-exports
-    └── view.rs          # Metronome window content
+    ├── view.rs          # Tempo controls, retained state, and visual pulse task
+    └── tests.rs         # UI integration and deterministic timer tests
 Cargo.toml              # Package metadata, dependencies, and lint policy
 Cargo.lock              # Resolved application dependencies; keep tracked
 rust-toolchain.toml     # Reproducible Rust toolchain and development tools
 ```
 
-The application shell owns window lifecycle. The `metronome` module owns the feature's presentation and will host its model and playback integration as they are implemented. Keep related behavior together and add modules when they have a concrete responsibility.
+The application shell owns window lifecycle. The `metronome` module owns tempo state, presentation, and visual playback. Its retained task is canceled on stop, tempo changes, or view disposal. Keep related behavior together and add modules when they have a concrete responsibility.
 
 ## Roadmap
 
 - [x] Initialize the Rust project and create a GPUI application window.
-- [ ] Implement tempo controls and start/stop behavior.
-- [ ] Add audible beats and visual feedback.
+- [x] Implement tempo controls and start/stop behavior.
+- [x] Add visual beat feedback.
+- [ ] Add audible beats.
 - [ ] Add measure configuration and beat accents.
 - [ ] Add tap tempo and keyboard shortcuts.
 - [ ] Validate playback timing and responsiveness on supported platforms.

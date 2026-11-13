@@ -13,6 +13,7 @@ pub(crate) fn run() {
         .with_assets(gpui_kit::assets::Assets)
         .run(|cx| {
             gpui_kit::init(cx);
+            crate::metronome::init(cx);
 
             cx.bind_keys([
                 KeyBinding::new("ctrl-q", Quit, None),
@@ -30,10 +31,10 @@ pub(crate) fn run() {
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(gpui_kit::Bounds::centered(
                     None,
-                    size(px(480.), px(360.)),
+                    size(px(480.), px(440.)),
                     cx,
                 ))),
-                window_min_size: Some(size(px(360.), px(240.))),
+                window_min_size: Some(size(px(360.), px(400.))),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Metronomo".into()),
                     ..Default::default()
@@ -41,7 +42,9 @@ pub(crate) fn run() {
                 ..Default::default()
             };
 
-            match gpui_kit::open_window(options, cx, |_, cx| cx.new(|_| Metronome)) {
+            match gpui_kit::open_window(options, cx, |window, cx| {
+                cx.new(|cx| Metronome::new(window, cx))
+            }) {
                 Ok(_) => cx.activate(true),
                 Err(error) => {
                     eprintln!("Could not open Metronomo: {error:#}");

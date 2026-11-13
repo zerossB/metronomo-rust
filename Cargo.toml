@@ -8,6 +8,9 @@ publish = false
 [dependencies]
 gpui-kit = "0.9.1"
 
+[dev-dependencies]
+gpui-kit = { version = "0.9.1", features = ["test-support"] }
+
 [lints.rust]
 unsafe_code = "forbid"
 

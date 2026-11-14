@@ -14,8 +14,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::{
-    audio::{DEFAULT_VOLUME, MAX_BPM, MIN_BPM},
-    meter::{BeatSound, BeatUnit, MAX_BEATS, Meter},
+    configuration::Configuration,
+    meter::Meter,
+    presets::{PresetError, PresetLibrary},
 };
 
 const VERSION: u32 = 1;
@@ -25,16 +26,18 @@ const MAX_FILE_BYTES: u64 = 64 * 1024;
 #[serde(default)]
 pub(super) struct Settings {
     version: u32,
-    bpm: u16,
-    volume: u8,
-    beats_per_bar: u8,
-    beat_unit: u8,
-    sounds: [BeatSound; MAX_BEATS as usize],
+    #[serde(flatten)]
+    configuration: Configuration,
+    presets: PresetLibrary,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self::new(120, DEFAULT_VOLUME, Meter::default())
+        Self {
+            version: VERSION,
+            configuration: Configuration::default(),
+            presets: PresetLibrary::default(),
+        }
     }
 }
 
@@ -42,48 +45,40 @@ impl Settings {
     pub(super) fn new(bpm: u16, volume: u8, meter: Meter) -> Self {
         Self {
             version: VERSION,
-            bpm,
-            volume,
-            beats_per_bar: meter.beats(),
-            beat_unit: meter.unit().denominator(),
-            sounds: std::array::from_fn(|ix| meter.sound(ix as u8)),
+            configuration: Configuration::new(bpm, volume, meter),
+            presets: PresetLibrary::default(),
         }
     }
 
     pub(super) fn bpm(&self) -> u16 {
-        self.bpm
+        self.configuration.bpm()
     }
 
     pub(super) fn volume(&self) -> u8 {
-        self.volume
+        self.configuration.volume()
     }
 
     pub(super) fn meter(&self) -> Meter {
-        let unit = BeatUnit::ALL
-            .into_iter()
-            .find(|unit| unit.denominator() == self.beat_unit)
-            .unwrap_or(BeatUnit::Quarter);
-        self.sounds.iter().enumerate().fold(
-            Meter::default()
-                .with_beats(self.beats_per_bar)
-                .with_unit(unit),
-            |meter, (ix, sound)| meter.with_sound(ix as u8, *sound),
-        )
+        self.configuration.meter()
+    }
+
+    pub(super) fn presets(&self) -> &PresetLibrary {
+        &self.presets
+    }
+
+    pub(super) fn with_presets(mut self, presets: PresetLibrary) -> Self {
+        self.presets = presets;
+        self
     }
 
     fn validate(&self) -> Result<(), SettingsError> {
         if self.version != VERSION {
             return Err(SettingsError::UnsupportedVersion(self.version));
         }
-        if !(MIN_BPM..=MAX_BPM).contains(&self.bpm)
-            || self.volume > 100
-            || !(1..=MAX_BEATS).contains(&self.beats_per_bar)
-            || !BeatUnit::ALL
-                .iter()
-                .any(|unit| unit.denominator() == self.beat_unit)
-        {
+        if !self.configuration.is_valid() {
             return Err(SettingsError::InvalidValues);
         }
+        self.presets.validate()?;
         Ok(())
     }
 }
@@ -231,6 +226,8 @@ pub(super) enum SettingsError {
     UnsupportedVersion(u32),
     #[error("Settings contain values outside the supported ranges")]
     InvalidValues,
+    #[error(transparent)]
+    Presets(#[from] PresetError),
     #[error("Settings exceed the maximum file size")]
     TooLarge,
     #[error(transparent)]

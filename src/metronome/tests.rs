@@ -15,6 +15,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "view/preset_controls/tests.rs"]
+mod preset_tests;
+
 #[derive(Default)]
 struct DeviceState {
     bpm: u16,
@@ -364,7 +367,7 @@ fn tap_tempo_combines_clicks_shortcuts_and_focused_button_activation(cx: &mut Te
         cx.run_until_parked();
         cx.update_window(handle, |_, window, cx| {
             if key == "enter" {
-                for _ in 0..3 {
+                for _ in 0..5 {
                     window.press("tab", cx);
                 }
                 assert_eq!(window.find("tap-tempo").focused(), Some(true));
@@ -686,6 +689,10 @@ fn tab_and_arrow_keys_keep_volume_and_playback_reachable(cx: &mut TestAppContext
     let (handle, _, _) = open(cx);
     cx.update_window(handle, |_, window, cx| {
         window.render_frame(cx);
+        window.press("tab", cx);
+        assert_eq!(window.find("open-presets").focused(), Some(true));
+        window.press("tab", cx);
+        assert_eq!(window.find("restore-defaults").focused(), Some(true));
         window.press("tab", cx);
         assert_eq!(window.find("decrease-tempo").focused(), Some(true));
         window.press("enter", cx);

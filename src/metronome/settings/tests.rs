@@ -3,6 +3,7 @@
     reason = "Temporary settings fixtures must be readable and writable."
 )]
 
+use super::super::meter::{BeatSound, BeatUnit, MAX_BEATS};
 use super::*;
 
 #[test]
@@ -94,4 +95,57 @@ fn shutdown_snapshot_cannot_be_overwritten_by_an_older_queued_save() {
         .save(&Settings::default())
         .expect("superseded write");
     assert_eq!(store.load().expect("final saved settings"), latest);
+}
+
+#[test]
+fn legacy_settings_restore_without_presets_and_round_trip_with_a_full_library() {
+    let folder = tempfile::tempdir().expect("temporary directory");
+    let path = folder.path().join("settings.json");
+    let store = SettingsStore::new(path.clone());
+    let legacy = br#"{"version":1,"bpm":173,"volume":42,"beats_per_bar":3,"beat_unit":8,"sounds":["low","muted","high","medium","low","muted","high","medium","low","muted","high","medium"]}"#;
+    fs::write(&path, legacy).expect("legacy file");
+    let saved = store.load().expect("load legacy settings");
+    assert_eq!(
+        (saved.bpm(), saved.volume(), saved.meter().unit()),
+        (173, 42, BeatUnit::Eighth)
+    );
+    assert_eq!(saved.meter().sound(11), BeatSound::Medium);
+    assert!(saved.presets().items().is_empty());
+    let mut library = PresetLibrary::default();
+    for ix in 0..super::super::presets::MAX_PRESETS {
+        library
+            .add(
+                &format!("{} {ix}", "🎵".repeat(55)),
+                Configuration::new(saved.bpm(), saved.volume(), saved.meter()),
+            )
+            .expect("preset");
+    }
+    let saved = saved.with_presets(library);
+    store.save(&saved).expect("save full library");
+    assert!(fs::metadata(path).expect("settings metadata").len() < MAX_FILE_BYTES);
+    assert_eq!(store.load().expect("reload full library"), saved);
+}
+
+#[test]
+fn invalid_preset_identity_names_and_snapshots_are_rejected() {
+    let folder = tempfile::tempdir().expect("temporary directory");
+    let path = folder.path().join("settings.json");
+    let store = SettingsStore::new(path.clone());
+    let mut library = PresetLibrary::default();
+    library
+        .add("Practice", Configuration::default())
+        .expect("preset");
+    let valid =
+        serde_json::to_value(Settings::default().with_presets(library)).expect("settings JSON");
+    for (field, invalid) in [
+        ("id", serde_json::json!(0)),
+        ("name", serde_json::json!(" ")),
+        ("configuration", serde_json::json!({"bpm":999})),
+    ] {
+        let mut broken = valid.clone();
+        broken["presets"]["items"][0][field] = invalid;
+        fs::write(&path, serde_json::to_vec(&broken).expect("broken JSON"))
+            .expect("invalid fixture");
+        assert!(store.load().is_err(), "accepted invalid preset {field}");
+    }
 }

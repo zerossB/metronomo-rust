@@ -29,6 +29,7 @@ Audio plays through the system's default output device. There is no published re
 - Live tempo changes preserve progress toward the next beat. Volume changes use a short gain ramp.
 - Keyboard operation, accessible control names, and light/dark theme support.
 - Automatic persistence of tempo, volume, time signature, and all twelve beat-sound choices.
+- Restore-defaults action and named presets with save, load, rename, delete, and undo-delete controls.
 - A GPUI Kit title bar with minimize, maximize/restore, and close controls where supported by the desktop.
 
 ### Keyboard controls
@@ -39,7 +40,7 @@ Audio plays through the system's default output device. There is no published re
 | Arrow keys with volume focused | Adjust volume by five percentage points |
 | `Space` / `Enter` | Start/stop when the main view or playback button has focus |
 | `T` outside menus | Tap a quarter-note beat to set the tempo |
-| `Tab` / `Shift+Tab` | Move between tempo, Tap Tempo, meter, beat-sound, volume, and playback controls |
+| `Tab` / `Shift+Tab` | Move between preset, restore-defaults, tempo, Tap Tempo, meter, beat-sound, volume, and playback controls |
 | `Enter` / `Space` on a meter or beat-sound control | Open its menu |
 | Arrow keys / `Enter` inside a menu | Navigate / select an option |
 | `Escape` inside a menu | Close it and return focus to its control |
@@ -48,6 +49,9 @@ Audio plays through the system's default output device. There is no published re
 | `Ctrl+Q` / `Cmd+Q` | Quit |
 | `Ctrl+W` / `Cmd+W` | Close the window and finish pending settings saves |
 | `Ctrl+M` / `Cmd+M` | Minimize the window |
+| `Enter` in the preset name field | Save the current configuration or finish renaming |
+| `Enter` / `Space` on a preset dialog button | Activate that button |
+| `Escape` in the presets dialog | Dismiss the topmost menu, or close the dialog and restore focus |
 
 ### Tap Tempo
 
@@ -78,6 +82,16 @@ Preferences use a versioned `settings.json` file in the user's configuration dir
 File reads and writes run off the UI and audio threads. Writes are serialized, coalesce pending changes, and atomically replace the previous file from a temporary file in the same directory. A missing file uses defaults. Invalid, unsupported, or unreadable settings show an inline warning and use defaults; the original file remains untouched until a setting is changed. A failed save leaves the live controls usable and retries on the next edit or when closing. Read/write errors also appear in the terminal with diagnostic details.
 
 Use the title bar to drag, minimize, maximize/restore, or close the window. It follows the platform's supported controls; macOS uses its native window buttons, and Linux defers to system decorations if the compositor selects them. Minimizing keeps audio playing. Closing stops playback and waits for pending writes before removing the window; the last window exits the app.
+
+### Restore defaults and presets
+
+Select **Restore defaults** to return to **120 BPM**, **60% volume**, **4/4**, and the default sounds: High on beat 1 and Medium on all remaining slots. This resets all twelve sound slots and the Tap Tempo sequence, and updates the saved file automatically. Existing presets remain available. Playback keeps its current running or stopped state.
+
+Open **Presets…**, enter a name, and select **Save preset** or press Enter. Each preset captures BPM, volume, time signature, and all twelve beat-sound choices, including hidden beats. Presets are snapshots: later metronome adjustments leave their saved configurations intact.
+
+Select **Load** to apply a preset and return to the main controls. Loading updates the live audio and saved current configuration while preserving the current playback state. Each preset's **Actions** menu offers **Rename…** and **Delete**. A deletion offers **Undo delete** while the presets dialog remains open; closing the dialog dismisses that undo opportunity. Deleting a preset leaves the metronome's current configuration in place.
+
+Names are trimmed, unique without regard to case, and limited to 64 characters. The library holds up to 64 presets. Name validation and file-save failures appear inside the dialog. Settings and presets are saved together in `settings.json` using the existing atomic write path, and older settings files load with an empty preset library.
 
 ## Technology
 
@@ -128,6 +142,12 @@ cargo clippy --all-targets --all-features --locked -- -D warnings
 
 Unit tests cover sample-frame timing, fractional BPM intervals, note-unit duration scaling, bar wrapping, per-beat timbres, first-beat accents, mute, volume, latency-aware visual positions, and settings validation and replacement. UI integration tests use the production view with a device-free audio session to cover controls, initialization cancellation, output failure/retry, meter and per-beat sound menus, keyboard focus restoration, layout with larger text, and persistence across closing and reopening. Persistence tests use temporary directories and never modify personal settings.
 
+Preset tests also cover snapshot fidelity, naming conflicts, rename/delete/undo, backward-compatible settings loading, restore-defaults persistence, live audio updates, and keyboard navigation through a full library at the minimum window size with larger text. To export rendered light/dark and zoomed dialog previews into the temporary directory:
+
+```sh
+cargo test --locked render_presets_previews -- --ignored
+```
+
 An opt-in Linux test opens a real window briefly, minimizes and restores it, and closes it through the title bar without playing audio or reading personal settings:
 
 ```sh
@@ -152,6 +172,10 @@ src/
 └── metronome/
     ├── mod.rs           # Feature boundary and deliberate re-exports
     ├── meter.rs         # Time signature and per-beat sound model
+    ├── configuration.rs # Shared metronome snapshots and default values
+    ├── presets.rs       # Named preset library, identity, and validation
+    ├── presets/
+    │   └── tests.rs     # Preset naming, rename, delete, and undo tests
     ├── tap_tempo.rs     # Monotonic tap timing and bounded tempo estimation
     ├── settings.rs      # Versioned settings, validation, and atomic file writes
     ├── settings/
@@ -163,7 +187,10 @@ src/
     ├── view.rs          # Tempo/volume controls and audio lifecycle
     ├── view/
     │   ├── meter_controls.rs # Meter menus and numbered beat indicators
-    │   └── persistence.rs    # Background save coordination and close/quit flushing
+    │   ├── persistence.rs    # Background save coordination and close/quit flushing
+    │   ├── preset_controls.rs # Restore action and preset dialog
+    │   └── preset_controls/
+    │       └── tests.rs      # Preset UI flows and rendered previews
     └── tests.rs         # UI integration tests with a device-free audio session
 Cargo.toml              # Package metadata, dependencies, and lint policy
 Cargo.lock              # Resolved application dependencies; keep tracked
@@ -181,6 +208,7 @@ The application shell owns window lifecycle. The `metronome` module owns present
 - [x] Add time signatures, per-beat sounds, and first-beat accents.
 - [x] Add tap tempo and keyboard shortcuts.
 - [x] Persist preferences and add desktop window controls.
+- [x] Restore defaults and manage named configuration presets.
 - [ ] Validate playback timing and responsiveness on supported platforms.
 - [ ] Document installation and prepare the first release.
 

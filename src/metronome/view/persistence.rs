@@ -3,16 +3,17 @@ use gpui_kit::{AppContext as _, Context, Window};
 use super::{Metronome, PlaybackPosition, PlaybackState, Settings};
 
 impl Metronome {
+    pub(super) fn settings(&self, cx: &gpui_kit::App) -> Settings {
+        Settings::new(self.bpm(cx) as u16, self.volume(cx) as u8, self.meter)
+            .with_presets(self.presets.clone())
+    }
+
     pub(super) fn save_preferences(&mut self, cx: &mut Context<Self>) {
         if self.settings_store.is_none() {
             return;
         }
         self.settings_dirty = true;
-        self.pending_settings = Some(Settings::new(
-            self.bpm(cx) as u16,
-            self.volume(cx) as u8,
-            self.meter,
-        ));
+        self.pending_settings = Some(self.settings(cx));
         if self.save_task.is_some() || self.closing {
             return;
         }

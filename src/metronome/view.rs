@@ -1,12 +1,15 @@
 use std::{sync::Arc, time::Duration};
 
 use super::audio::{self, AudioFactory, AudioPlayback, PlaybackPosition};
+use super::configuration::Configuration;
 use super::meter::{BeatSound, BeatUnit, Meter};
+use super::presets::PresetLibrary;
 use super::settings::{Preferences, Settings, SettingsStore};
 use super::tap_tempo::{RESET_AFTER, TapTempoState};
 
 mod meter_controls;
 mod persistence;
+mod preset_controls;
 use meter_controls::MeterFocus;
 
 use gpui_kit::component::{
@@ -42,6 +45,7 @@ gpui_kit::actions!(
 );
 
 pub(crate) fn init(cx: &mut App) {
+    preset_controls::init(cx);
     cx.bind_keys([
         KeyBinding::new("t", TapTempo, Some("Metronome && !PopupMenu")),
         KeyBinding::new("ctrl-w", CloseWindow, Some(KEY_CONTEXT)),
@@ -51,12 +55,12 @@ pub(crate) fn init(cx: &mut App) {
         KeyBinding::new(
             "space",
             TogglePlayback,
-            Some("Metronome && !TempoControls && !VolumeControls && !MeterControls"),
+            Some("Metronome && !TempoControls && !VolumeControls && !MeterControls && !PresetControls"),
         ),
         KeyBinding::new(
             "enter",
             TogglePlayback,
-            Some("Metronome && !TempoControls && !VolumeControls && !MeterControls"),
+            Some("Metronome && !TempoControls && !VolumeControls && !MeterControls && !PresetControls"),
         ),
         KeyBinding::new("up", IncreaseVolume, Some("Metronome > VolumeControls")),
         KeyBinding::new("down", DecreaseVolume, Some("Metronome > VolumeControls")),
@@ -92,6 +96,8 @@ pub(crate) struct Metronome {
     meter_focus: MeterFocus,
     practice_scroll: gpui_kit::ScrollHandle,
     tempo_focus: [FocusHandle; 3],
+    preset_focus: FocusHandle,
+    presets: PresetLibrary,
     tap_tempo: TapTempoState,
     tap_key_down: bool,
     playback: PlaybackState,
@@ -179,8 +185,7 @@ impl Metronome {
                 .clone()
                 .filter(|_| this.settings_dirty)
                 .map(|store| {
-                    let settings =
-                        Settings::new(this.bpm(cx) as u16, this.volume(cx) as u8, this.meter);
+                    let settings = this.settings(cx);
                     store.begin_shutdown();
                     // GPUI destroys windows before polling quit futures. This final
                     // write must not depend on the view or the foreground save loop.
@@ -235,6 +240,8 @@ impl Metronome {
             meter_focus,
             practice_scroll,
             tempo_focus,
+            preset_focus: cx.focus_handle().tab_stop(true),
+            presets: settings.presets().clone(),
             tap_tempo: TapTempoState::default(),
             tap_key_down: false,
             playback: PlaybackState::Stopped,
@@ -765,6 +772,7 @@ impl Render for Metronome {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .child(self.render_header(cx))
+            .child(self.render_preset_controls(cx))
             .child(
                 div()
                     .id("practice-scroll")

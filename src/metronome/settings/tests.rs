@@ -5,6 +5,7 @@
 
 use super::super::meter::{BeatSound, BeatUnit, MAX_BEATS};
 use super::*;
+use std::fs;
 
 #[test]
 fn missing_file_uses_defaults_without_creating_a_file() {

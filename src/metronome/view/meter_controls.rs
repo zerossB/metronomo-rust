@@ -1,8 +1,15 @@
 //! Meter controls and sound menus share the feature view's state and audio playhead.
 
-use super::*;
+use super::Metronome;
+use crate::metronome::meter::{BeatSound, BeatUnit};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, button::Button};
 use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::{App, FocusHandle, Subscription, Window};
+use gpui_kit::{
+    Context, InteractiveElement as _, IntoElement, ParentElement as _,
+    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, div,
+};
 
 pub(super) struct MeterFocus {
     count: FocusHandle,
@@ -57,11 +64,11 @@ impl MeterFocus {
 
 impl Metronome {
     pub(super) fn render_meter(&self, cx: &Context<Self>) -> impl IntoElement {
-        let meter = self.meter;
+        let meter = self.meter(cx);
         let owner = cx.entity().downgrade();
         let count_owner = owner.clone();
         let unit_owner = owner.clone();
-        let current = self.position.beat();
+        let current = self.position(cx).beat();
         let status = current.map_or_else(
             || format!("{} / {}", meter.beats(), meter.unit().denominator()),
             |beat| format!("Beat {} of {}", beat + 1, meter.beats()),
@@ -115,7 +122,10 @@ impl Metronome {
                                             .checked(beats == meter.beats())
                                             .on_click(move |_, _, cx| {
                                                 let _ = owner.update(cx, |this, cx| {
-                                                    this.set_meter(this.meter.with_beats(beats), cx)
+                                                    this.set_meter(
+                                                        this.meter(cx).with_beats(beats),
+                                                        cx,
+                                                    )
                                                 });
                                             }),
                                     )
@@ -151,7 +161,10 @@ impl Metronome {
                                         .on_click(
                                             move |_, _, cx| {
                                                 let _ = owner.update(cx, |this, cx| {
-                                                    this.set_meter(this.meter.with_unit(unit), cx)
+                                                    this.set_meter(
+                                                        this.meter(cx).with_unit(unit),
+                                                        cx,
+                                                    )
                                                 });
                                             },
                                         ),
@@ -192,11 +205,13 @@ impl Metronome {
                             .w_full()
                             .when(active, |button| {
                                 button
-                                    .bg(cx.theme().primary.opacity(if self.position.is_pulse() {
-                                        0.22
-                                    } else {
-                                        0.10
-                                    }))
+                                    .bg(cx.theme().primary.opacity(
+                                        if self.position(cx).is_pulse() {
+                                            0.22
+                                        } else {
+                                            0.10
+                                        },
+                                    ))
                                     .border_color(cx.theme().primary)
                                     .text_color(cx.theme().foreground)
                             })

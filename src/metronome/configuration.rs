@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-use super::{
-    audio::{DEFAULT_VOLUME, MAX_BPM, MIN_BPM},
-    meter::{BeatSound, BeatUnit, MAX_BEATS, Meter},
-};
+use super::meter::{BeatSound, BeatUnit, MAX_BEATS, Meter};
+
+pub(super) const MIN_BPM: u16 = 40;
+pub(super) const MAX_BPM: u16 = 240;
+pub(super) const DEFAULT_BPM: u16 = 120;
+pub(super) const DEFAULT_VOLUME: u8 = 60;
 
 /// A metronome snapshot, independent of the user's preset library and playback state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -18,7 +20,7 @@ pub(super) struct Configuration {
 
 impl Default for Configuration {
     fn default() -> Self {
-        Self::new(120, DEFAULT_VOLUME, Meter::default())
+        Self::new(DEFAULT_BPM, DEFAULT_VOLUME, Meter::default())
     }
 }
 
@@ -51,6 +53,20 @@ impl Configuration {
                 .with_unit(unit),
             |meter, (ix, sound)| meter.with_sound(ix as u8, *sound),
         )
+    }
+
+    pub(super) fn with_bpm(mut self, bpm: u16) -> Self {
+        self.bpm = bpm.clamp(MIN_BPM, MAX_BPM);
+        self
+    }
+
+    pub(super) fn with_volume(mut self, volume: u8) -> Self {
+        self.volume = volume.min(100);
+        self
+    }
+
+    pub(super) fn with_meter(self, meter: Meter) -> Self {
+        Self::new(self.bpm, self.volume, meter)
     }
 
     pub(super) fn is_valid(self) -> bool {

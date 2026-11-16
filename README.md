@@ -142,6 +142,8 @@ cargo clippy --all-targets --all-features --locked -- -D warnings
 
 Unit tests cover sample-frame timing, fractional BPM intervals, note-unit duration scaling, bar wrapping, per-beat timbres, first-beat accents, mute, volume, latency-aware visual positions, and settings validation and replacement. UI integration tests use the production view with a device-free audio session to cover controls, initialization cancellation, output failure/retry, meter and per-beat sound menus, keyboard focus restoration, layout with larger text, and persistence across closing and reopening. Persistence tests use temporary directories and never modify personal settings.
 
+Window-free session tests verify that commands keep the model, running audio, and persisted snapshots coherent, preserve hidden sounds when loading presets or restoring defaults, isolate playback notifications, and flush the final snapshot on close.
+
 Preset tests also cover snapshot fidelity, naming conflicts, rename/delete/undo, backward-compatible settings loading, restore-defaults persistence, live audio updates, and keyboard navigation through a full library at the minimum window size with larger text. To export rendered light/dark and zoomed dialog previews into the temporary directory:
 
 ```sh
@@ -166,38 +168,55 @@ The audio callback schedules beats independently of GPUI. The visual indicator u
 
 ```text
 src/
-├── main.rs              # Executable entry point
+├── main.rs                  # Executable entry point
 ├── app/
-│   └── mod.rs           # GPUI initialization, window options, and quit handling
+│   └── mod.rs               # GPUI bootstrap, window options, and quit routing
 └── metronome/
-    ├── mod.rs           # Feature boundary and deliberate re-exports
-    ├── meter.rs         # Time signature and per-beat sound model
-    ├── configuration.rs # Shared metronome snapshots and default values
-    ├── presets.rs       # Named preset library, identity, and validation
-    ├── presets/
-    │   └── tests.rs     # Preset naming, rename, delete, and undo tests
-    ├── tap_tempo.rs     # Monotonic tap timing and bounded tempo estimation
-    ├── settings.rs      # Versioned settings, validation, and atomic file writes
+    ├── mod.rs               # Feature boundary and deliberate re-exports
+    ├── configuration.rs     # Musical snapshots, supported ranges, and defaults
+    ├── meter.rs             # Time signatures and all twelve per-beat sound slots
+    ├── presets.rs           # Named library, stable identity, and validation
+    ├── presets/tests.rs     # Pure preset tests
+    ├── tap_tempo.rs         # Pure quarter-note tempo estimation
+    ├── session.rs           # Authoritative configuration, presets, and tap commands
+    ├── session/tests.rs     # Window-free feature integration tests
+    ├── playback.rs          # Device startup, cancellation, errors, and visual polling
+    ├── settings.rs          # Versioned JSON document, validation, and startup loading
     ├── settings/
-    │   └── tests.rs     # Temporary-file persistence and recovery tests
-    ├── audio.rs         # Default output, atomic controls, and playback timeline
+    │   ├── store.rs         # Bounded reads and atomic file replacement
+    │   ├── writer.rs        # Save queue, error state, and close/quit flushing
+    │   └── tests.rs         # Temporary-file persistence and compatibility tests
+    ├── audio.rs             # CPAL output, atomic controls, and audible timeline
     ├── audio/
-    │   ├── renderer.rs  # Synthesized click and sample-frame beat scheduling
-    │   └── tests.rs     # DSP, synchronization, and opt-in device tests
-    ├── view.rs          # Tempo/volume controls and audio lifecycle
+    │   ├── renderer.rs      # Synthesized clicks and sample-frame scheduling
+    │   └── tests.rs         # DSP, synchronization, and opt-in device tests
+    ├── view.rs              # Window composition, control state, focus, and shortcuts
     ├── view/
-    │   ├── meter_controls.rs # Meter menus and numbered beat indicators
-    │   ├── persistence.rs    # Background save coordination and close/quit flushing
-    │   ├── preset_controls.rs # Restore action and preset dialog
-    │   └── preset_controls/
-    │       └── tests.rs      # Preset UI flows and rendered previews
-    └── tests.rs         # UI integration tests with a device-free audio session
-Cargo.toml              # Package metadata, dependencies, and lint policy
-Cargo.lock              # Resolved application dependencies; keep tracked
-rust-toolchain.toml     # Reproducible Rust toolchain and development tools
+    │   ├── header.rs        # Title bar and playback status
+    │   ├── tempo_controls.rs
+    │   ├── meter_controls.rs
+    │   ├── volume_controls.rs
+    │   ├── transport_controls.rs
+    │   ├── preset_controls.rs # Toolbar and dialog composition
+    │   ├── presets_dialog.rs # Preset editing, draft, undo, and modal focus
+    │   └── tests/           # UI flows grouped by responsibility and rendered previews
+    └── test_support.rs      # Shared device-free audio fixture, compiled only for tests
+Cargo.toml                  # Package metadata, dependencies, and lint policy
+Cargo.lock                  # Resolved application dependencies; keep tracked
+rust-toolchain.toml         # Reproducible Rust toolchain and development tools
 ```
 
-The application shell owns window lifecycle. The `metronome` module owns presentation and audio lifecycle. Opening the device runs off the UI thread. The audio callback reads one coherent atomic control snapshot and sends playback timestamps through a preallocated queue; it does not call GPUI, allocate, or acquire a mutex. The UI only follows the resulting playback timeline. Keep related behavior together and add modules when they have a concrete responsibility.
+### State and dependency flow
+
+The application shell composes the window through the feature's `init`, `Metronome`, and `Preferences` exports. Within the feature, the UI sends commands to `MetronomeSession`; it does not own the musical configuration or preset library. The configuration, meter, preset library, and tap estimator have no GPUI or CPAL dependencies.
+
+`MetronomeSession` owns the active configuration and tap history, delegates output to `PlaybackController`, and submits complete settings snapshots to `PreferencesWriter`. These entities retain their own tasks and subscriptions. Sliders mirror the session through silent value synchronization and submit the value carried by each user event, avoiding feedback loops and stale-value overwrites. The preset dialog targets session commands directly and retains only its draft, undo, focus, and scrolling state.
+
+Configuration, preset-library, and tap events are separate from playback and save notifications. Audio pulses update the window without invalidating the preset editor. The playback controller retains the device-free `AudioPlayback`/`AudioFactory` seam for tests and performs device opening off the UI thread. Its configuration is an applied output snapshot; the session remains the authoritative source.
+
+The writer coalesces queued snapshots and performs file I/O on workers. Closing stops playback and awaits pending saves; system quit captures the latest snapshot before window destruction and finishes independently of foreground entities. The settings location, JSON version, and legacy-file compatibility are preserved.
+
+The audio callback reads one coherent atomic control snapshot and sends playback timestamps through a preallocated queue. It does not call GPUI, allocate, or acquire a mutex. Keep new behavior behind these existing seams and introduce another module only when it has a concrete responsibility.
 
 ## Roadmap
 

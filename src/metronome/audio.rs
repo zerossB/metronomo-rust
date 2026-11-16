@@ -14,14 +14,14 @@ use cpal::{
 };
 use rtrb::{Consumer, Producer, RingBuffer};
 
-use super::meter::Meter;
+use super::{
+    configuration::{DEFAULT_BPM, DEFAULT_VOLUME, MAX_BPM, MIN_BPM},
+    meter::Meter,
+};
 
 mod renderer;
 use renderer::ClickRenderer;
 
-pub(super) const MIN_BPM: u16 = 40;
-pub(super) const MAX_BPM: u16 = 240;
-pub(super) const DEFAULT_VOLUME: u8 = 60;
 const PULSE_DURATION: Duration = Duration::from_millis(100);
 
 #[derive(Debug, thiserror::Error)]
@@ -113,7 +113,7 @@ impl Controls {
         Self {
             settings: AtomicU64::new(
                 Settings {
-                    bpm: 120,
+                    bpm: DEFAULT_BPM,
                     volume: DEFAULT_VOLUME,
                     playing: false,
                     generation: 0,

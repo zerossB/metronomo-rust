@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use super::audio::{MAX_BPM, MIN_BPM};
+use super::configuration::{MAX_BPM, MIN_BPM};
 
 pub(super) const RESET_AFTER: Duration = Duration::from_secs(3);
 const MIN_INTERVAL: Duration = Duration::from_millis(100);

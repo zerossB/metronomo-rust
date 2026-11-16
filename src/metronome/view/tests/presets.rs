@@ -60,14 +60,14 @@ fn presets_save_with_pointer_and_enter_and_validate_names_without_affecting_tran
             Some("Test practice")
         );
         assert_eq!(window.find(("preset-row", 2_u32)).label(), Some("Second"));
-        assert_eq!(view.read(cx).presets.items().len(), 2);
+        assert_eq!(view.read(cx).session.read(cx).presets().items().len(), 2);
         assert_eq!(
             window.find("preset-error").label(),
             Some("A preset with this name already exists. Choose another name.")
         );
-        assert!(view.read(cx).playback == PlaybackState::Stopped);
+        assert!(view.read(cx).playback(cx) == PlaybackState::Stopped);
         assert_eq!(
-            view.read(cx).tap_tempo.taps(),
+            view.read(cx).session.read(cx).taps(),
             0,
             "typing T must not tap tempo"
         );
@@ -123,9 +123,9 @@ fn restore_defaults_resets_all_twelve_sounds_and_saved_values_while_preserving_p
         assert_eq!(window.find("tempo-value").label(), Some("120 BPM"));
         assert_eq!(window.find("volume-value").label(), Some("60%"));
         assert_eq!(window.find("current-beat").label(), Some("4 / 4"));
-        assert_eq!(view.read(cx).meter, Meter::default());
-        assert_eq!(view.read(cx).presets, library);
-        assert!(view.read(cx).playback == PlaybackState::Running);
+        assert_eq!(view.read(cx).meter(cx), Meter::default());
+        assert_eq!(view.read(cx).session.read(cx).presets(), &library);
+        assert!(view.read(cx).playback(cx) == PlaybackState::Running);
     })
     .expect("restore all defaults in one action");
     cx.run_until_parked();
@@ -224,9 +224,9 @@ fn presets_rename_delete_undo_load_and_survive_reopening_with_all_sound_slots(
         assert!(window.try_find("presets-editor").is_none());
         assert_eq!(window.find("tempo-value").label(), Some("137 BPM"));
         assert_eq!(window.find("volume-value").label(), Some("25%"));
-        assert_eq!(view.read(cx).meter, meter);
+        assert_eq!(view.read(cx).meter(cx), meter);
         assert_eq!(window.find("open-presets").focused(), Some(true));
-        assert!(view.read(cx).playback == PlaybackState::Running);
+        assert!(view.read(cx).playback(cx) == PlaybackState::Running);
     })
     .expect("apply the entire snapshot without stopping playback");
     {
@@ -244,7 +244,7 @@ fn presets_rename_delete_undo_load_and_survive_reopening_with_all_sound_slots(
         open_with_preferences(cx, factory, Preferences::from_store(store.clone()));
     cx.update_window(handle, |_, window, cx| {
         window.render_frame(cx);
-        assert!(reopened.read(cx).playback == PlaybackState::Stopped);
+        assert!(reopened.read(cx).playback(cx) == PlaybackState::Stopped);
         window.click("restore-defaults", cx);
     })
     .expect("restore defaults after reopening");
@@ -315,9 +315,15 @@ fn preset_menus_restore_focus_and_name_conflicts_do_not_overwrite_snapshots(
     save_named(cx, handle, "Beta", false);
     cx.update_window(handle, |_, window, cx| {
         window.click("undo-delete-preset", cx);
-        assert_eq!(view.read(cx).presets.items().len(), 2);
+        assert_eq!(view.read(cx).session.read(cx).presets().items().len(), 2);
         assert_eq!(
-            view.read(cx).presets.get(3).expect("new preset").name(),
+            view.read(cx)
+                .session
+                .read(cx)
+                .presets()
+                .get(3)
+                .expect("new preset")
+                .name(),
             "Beta"
         );
         assert!(window.find("preset-error").visible());
@@ -440,29 +446,30 @@ fn render_presets_previews() {
     );
     cx.update(|cx| {
         gpui_kit::init(cx);
-        super::super::init(cx);
+        crate::metronome::init(cx);
     });
     for (name, mode, width, height, font_size) in [
         ("light", ThemeMode::Light, 600., 780., 16.),
         ("dark", ThemeMode::Dark, 600., 780., 16.),
         ("zoom", ThemeMode::Dark, 480., 720., 20.),
     ] {
-        let (handle, _) = cx.update(|cx| {
-            Theme::change(mode, None, cx);
-            Theme::update(cx, |theme| theme.font_size = px(font_size));
-            gpui_kit::open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                        Default::default(),
-                        size(px(width), px(height)),
-                    ))),
-                    show: false,
-                    ..Default::default()
-                },
-                cx,
-                |window, cx| {
-                    cx.new(|cx| {
-                        let mut view = Metronome::with_audio_factory(
+        let (handle, _) =
+            cx.update(|cx| {
+                Theme::change(mode, None, cx);
+                Theme::update(cx, |theme| theme.font_size = px(font_size));
+                gpui_kit::open_window(
+                    WindowOptions {
+                        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                            Default::default(),
+                            size(px(width), px(height)),
+                        ))),
+                        show: false,
+                        ..Default::default()
+                    },
+                    cx,
+                    |window, cx| {
+                        cx.new(|cx| {
+                        let view = Metronome::with_audio_factory(
                             window,
                             cx,
                             Arc::new(|| Err(AudioError::NoDevice)),
@@ -474,23 +481,20 @@ fn render_presets_previews() {
                             } else {
                                 format!("Practice {ix}")
                             };
-                            view.presets
-                                .add(
-                                    &label,
-                                    Configuration::new(
-                                        80 + ix * 10,
-                                        60,
-                                        Meter::default().with_beats(3 + ix as u8 % 4),
-                                    ),
-                                )
-                                .expect("preview preset");
+                            view.session.update(cx, |session, cx| {
+                                session.apply_configuration(Configuration::new(
+                                    80 + ix * 10, 60, Meter::default().with_beats(3 + ix as u8 % 4),
+                                ), cx);
+                                session.save_preset(&label, cx)
+                            }).expect("preview preset");
                         }
+                        view.session.update(cx, |session, cx| session.restore_defaults(cx));
                         view
                     })
-                },
-            )
-            .expect("open preview")
-        });
+                    },
+                )
+                .expect("open preview")
+            });
         cx.update_window(handle, |_, window, cx| {
             window.render_frame(cx);
             window.click("open-presets", cx);

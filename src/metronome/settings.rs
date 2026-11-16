@@ -1,14 +1,6 @@
 //! Versioned user preferences and atomic file replacement. Call file operations off the UI thread.
 
-use std::{
-    fs::{self, File},
-    io::{self, Read as _, Write as _},
-    path::PathBuf,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use std::io;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -18,6 +10,11 @@ use super::{
     meter::Meter,
     presets::{PresetError, PresetLibrary},
 };
+
+mod store;
+mod writer;
+pub(super) use store::SettingsStore;
+pub(super) use writer::PreferencesWriter;
 
 const VERSION: u32 = 1;
 const MAX_FILE_BYTES: u64 = 64 * 1024;
@@ -83,84 +80,6 @@ impl Settings {
     }
 }
 
-#[derive(Clone)]
-pub(super) struct SettingsStore {
-    path: PathBuf,
-    writer: Arc<Writer>,
-}
-
-#[derive(Default)]
-struct Writer {
-    lock: Mutex<()>,
-    shutting_down: AtomicBool,
-}
-
-impl SettingsStore {
-    fn for_user() -> Result<Self, SettingsError> {
-        let folder = dirs::config_dir().ok_or(SettingsError::NoConfigDirectory)?;
-        Ok(Self::new(folder.join("metronomo").join("settings.json")))
-    }
-
-    pub(super) fn new(path: PathBuf) -> Self {
-        Self {
-            path,
-            writer: Arc::new(Writer::default()),
-        }
-    }
-
-    pub(super) fn load(&self) -> Result<Settings, SettingsError> {
-        let file = match File::open(&self.path) {
-            Ok(file) => file,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Settings::default()),
-            Err(error) => return Err(error.into()),
-        };
-        let mut bytes = Vec::new();
-        file.take(MAX_FILE_BYTES + 1).read_to_end(&mut bytes)?;
-        if bytes.len() as u64 > MAX_FILE_BYTES {
-            return Err(SettingsError::TooLarge);
-        }
-        let settings: Settings = serde_json::from_slice(&bytes)?;
-        settings.validate()?;
-        Ok(settings)
-    }
-
-    pub(super) fn save(&self, settings: &Settings) -> Result<(), SettingsError> {
-        self.write(settings, false)
-    }
-
-    pub(super) fn begin_shutdown(&self) {
-        self.writer.shutting_down.store(true, Ordering::Release);
-    }
-
-    pub(super) fn save_on_shutdown(&self, settings: &Settings) -> Result<(), SettingsError> {
-        self.write(settings, true)
-    }
-
-    fn write(&self, settings: &Settings, shutdown: bool) -> Result<(), SettingsError> {
-        // Only worker threads acquire this lock. A shutdown snapshot supersedes
-        // any queued save, including a cancelled task already executing file I/O.
-        let _writer = self
-            .writer
-            .lock
-            .lock()
-            .map_err(|_| io::Error::other("Settings writer lock was poisoned"))?;
-        if !shutdown && self.writer.shutting_down.load(Ordering::Acquire) {
-            return Ok(());
-        }
-        settings.validate()?;
-        let parent = self.path.parent().ok_or(SettingsError::NoConfigDirectory)?;
-        fs::create_dir_all(parent)?;
-        let bytes = serde_json::to_vec_pretty(settings)?;
-        // A same-directory temporary file keeps interrupted writes from truncating the last save.
-        let mut file = tempfile::NamedTempFile::new_in(parent)?;
-        file.write_all(&bytes)?;
-        file.write_all(b"\n")?;
-        file.as_file().sync_all()?;
-        file.persist(&self.path).map_err(|error| error.error)?;
-        Ok(())
-    }
-}
-
 /// The application loads this on a worker before constructing the first window.
 pub(crate) struct Preferences {
     settings: Settings,
@@ -189,7 +108,7 @@ impl Preferences {
             Err(error) => {
                 eprintln!(
                     "Could not load Metronomo settings at {}: {error}",
-                    store.path.display()
+                    store.path().display()
                 );
                 (
                     Settings::default(),

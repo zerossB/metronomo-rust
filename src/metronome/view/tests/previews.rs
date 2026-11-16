@@ -17,12 +17,20 @@ fn render_meter_previews() {
     );
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::theme::init(cx);
         crate::metronome::init(cx);
     });
-    for (name, mode, width, height, font_size) in [
-        ("light", ThemeMode::Light, 600., 780., 16.),
-        ("dark", ThemeMode::Dark, 600., 780., 16.),
-        ("zoom", ThemeMode::Dark, 480., 720., 20.),
+    for (name, mode, width, height, font_size, beats) in [
+        ("light", ThemeMode::Light, 600., 780., 16., 12),
+        ("dark", ThemeMode::Dark, 600., 780., 16., 12),
+        ("zoom", ThemeMode::Dark, 480., 720., 20., 12),
+        ("light-zoom", ThemeMode::Light, 480., 720., 20., 12),
+        ("light-small", ThemeMode::Light, 480., 720., 16., 4),
+        ("dark-small", ThemeMode::Dark, 480., 720., 16., 4),
+        ("light-large-text", ThemeMode::Light, 600., 780., 20., 4),
+        ("dark-large-text", ThemeMode::Dark, 600., 780., 20., 4),
+        ("light-default", ThemeMode::Light, 600., 780., 16., 4),
+        ("dark-default", ThemeMode::Dark, 600., 780., 16., 4),
     ] {
         let state = Arc::new(Mutex::new(DeviceState::default()));
         let device = state.clone();
@@ -43,7 +51,7 @@ fn render_meter_previews() {
                 |window, cx| {
                     cx.new(|cx| {
                         let mut view = Metronome::with_audio_factory(window, cx, factory);
-                        let mut meter = Meter::default().with_beats(12);
+                        let mut meter = Meter::default().with_beats(beats);
                         for beat in 0..12 {
                             meter = meter.with_sound(beat, BeatSound::ALL[usize::from(beat % 4)]);
                         }
@@ -69,7 +77,10 @@ fn render_meter_previews() {
         cx.run_until_parked();
         cx.update_window(handle, |_, window, cx| {
             window.render_frame(cx);
-            assert_eq!(window.find("current-beat").label(), Some("Beat 3 of 12"));
+            assert_eq!(
+                window.find("current-beat").label(),
+                Some(format!("Beat 3 of {beats}").as_str())
+            );
             let grid = window.find("beat-grid").bounds();
             let button = window.find("toggle-playback").bounds();
             assert!(grid.left() >= px(0.) && grid.right() <= px(width));
@@ -124,6 +135,7 @@ fn native_window_controls_smoke() {
         .with_assets(gpui_kit::assets::Assets)
         .run(move |cx| {
             gpui_kit::init(cx);
+            crate::theme::init(cx);
             crate::metronome::init(cx);
             let (handle, _) = gpui_kit::open_window(
                 WindowOptions {

@@ -9,6 +9,7 @@ use super::playback::PlaybackState;
 use super::session::{MetronomeSession, SessionEvent};
 use super::settings::Preferences;
 
+mod beat_block;
 mod header;
 mod meter_controls;
 mod preset_controls;
@@ -95,6 +96,7 @@ pub(crate) struct Metronome {
     preset_focus: FocusHandle,
     tap_key_down: bool,
     closing: bool,
+    open_beat_menu: Option<u8>,
     close_task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
@@ -187,7 +189,7 @@ impl Metronome {
             this.tap_key_down = false;
         }));
         subscriptions.extend(meter_focus.observe(window, cx));
-        for focus in &tempo_focus {
+        for focus in &tempo_focus[..2] {
             let scroll = practice_scroll.clone();
             let target = focus.clone();
             subscriptions.push(cx.on_focus(focus, window, move |_, window, _| {
@@ -215,6 +217,7 @@ impl Metronome {
             preset_focus: cx.focus_handle().tab_stop(true),
             tap_key_down: false,
             closing: false,
+            open_beat_menu: None,
             close_task: None,
             _subscriptions: subscriptions,
         }
@@ -366,7 +369,7 @@ impl Render for Metronome {
                             .flex()
                             .flex_col()
                             .p_4()
-                            .gap_6()
+                            .gap_4()
                             .child(self.render_tempo_controls(cx))
                             .child(self.render_meter(cx)),
                     ),
@@ -375,8 +378,14 @@ impl Render for Metronome {
                 div()
                     .flex()
                     .flex_col()
-                    .p_4()
-                    .gap_4()
+                    .id("practice-footer")
+                    .test_support()
+                    .flex_shrink_0()
+                    .px_4()
+                    .py_3()
+                    .gap_2()
+                    .border_t_1()
+                    .border_color(cx.theme().border)
                     .child(self.render_volume(cx))
                     .child(self.render_transport(cx)),
             )

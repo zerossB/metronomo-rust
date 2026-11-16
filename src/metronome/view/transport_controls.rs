@@ -22,21 +22,32 @@ impl Metronome {
         div()
             .flex()
             .flex_col()
-            .gap_3()
+            .gap_2()
             .child(
-                Button::new("toggle-playback")
-                    .disabled(self.closing)
-                    .label(toggle_label)
-                    .icon(if running {
-                        IconName::Square
-                    } else {
-                        IconName::Play
-                    })
-                    .primary()
-                    .large()
-                    .w_full()
-                    .tooltip("Start or stop (Space)")
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_playback(cx))),
+                div()
+                    .id("playback-controls")
+                    .test_support()
+                    .flex()
+                    .items_start()
+                    .gap_3()
+                    .child(
+                        div().flex_1().min_w_0().child(
+                            Button::new("toggle-playback")
+                                .disabled(self.closing)
+                                .label(toggle_label)
+                                .icon(if running {
+                                    IconName::Square
+                                } else {
+                                    IconName::Play
+                                })
+                                .primary()
+                                .large()
+                                .w_full()
+                                .tooltip("Start or stop (Space)")
+                                .on_click(cx.listener(|this, _, _, cx| this.toggle_playback(cx))),
+                        ),
+                    )
+                    .child(self.render_tap_tempo(cx)),
             )
             .children(self.settings_error(cx).map(|message| {
                 div()
@@ -50,17 +61,25 @@ impl Metronome {
             }))
             .child(
                 div()
-                    .text_center()
-                    .text_xs()
-                    .id("audio-message")
-                    .test_support()
-                    .aria_label(message.clone())
-                    .text_color(if self.audio_error(cx).is_some() {
-                        cx.theme().danger
-                    } else {
-                        cx.theme().muted_foreground
-                    })
-                    .child(message),
+                    .flex()
+                    .items_start()
+                    .gap_3()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_xs()
+                            .id("audio-message")
+                            .test_support()
+                            .aria_label(message.clone())
+                            .text_color(if self.audio_error(cx).is_some() {
+                                cx.theme().danger
+                            } else {
+                                cx.theme().muted_foreground
+                            })
+                            .child(message),
+                    )
+                    .child(self.render_tap_hint(cx)),
             )
     }
 }

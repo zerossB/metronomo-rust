@@ -32,36 +32,36 @@ impl Metronome {
                 this.adjust_volume(-5., window, cx)
             }))
             .flex()
-            .flex_col()
+            .items_center()
             .gap_2()
-            .p_2()
+            .px_0()
+            .py_1()
             .border_1()
             .border_color(cx.theme().transparent)
             .rounded(cx.theme().radius)
             .focus_visible(|style| style.border_color(cx.theme().ring))
+            .child(div().text_sm().flex_shrink_0().child("Volume"))
             .child(
-                div()
-                    .flex()
-                    .justify_between()
-                    .text_sm()
-                    .child("Volume")
-                    .child(
-                        div()
-                            .id("volume-value")
-                            .test_support()
-                            .aria_label(format!("{volume:.0}%"))
-                            .text_color(cx.theme().muted_foreground)
-                            .child(if volume == 0. {
-                                "Muted".into()
-                            } else {
-                                format!("{volume:.0}%")
-                            }),
-                    ),
+                div().flex_1().min_w_0().px_2().child(
+                    Slider::new(&self.volume)
+                        .disabled(self.closing)
+                        .accessibility_label("Volume percentage"),
+                ),
             )
             .child(
-                Slider::new(&self.volume)
-                    .disabled(self.closing)
-                    .accessibility_label("Volume percentage"),
+                div()
+                    .id("volume-value")
+                    .test_support()
+                    .aria_label(format!("{volume:.0}%"))
+                    .w_12()
+                    .text_right()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(if volume == 0. {
+                        "Muted".into()
+                    } else {
+                        format!("{volume:.0}%")
+                    }),
             )
     }
 }

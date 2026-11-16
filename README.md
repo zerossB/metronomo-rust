@@ -21,7 +21,9 @@ Audio plays through the system's default output device. There is no published re
 - Slider for quick adjustment and −/+ buttons for changes of one BPM.
 - Tap Tempo button and `T` shortcut, with a rolling average of the last four tap intervals.
 - Synthesized percussive click through the default audio output, using its sample rate and format.
-- Start/stop button and numbered beat indicators driven by audio playback timestamps.
+- Large, stable-width BPM display and a fixed footer for volume, Start/Stop, and Tap Tempo.
+- Numbered beat blocks driven by audio playback timestamps, with persistent sound labels, an accent star on beat 1, and a visible Playing marker.
+- Restrained amber accents with dedicated light and dark product themes.
 - Configurable time signature: **1–12 beats per bar**, with half, quarter, eighth, or sixteenth-note units; **4/4** by default.
 - Independent **High**, **Medium**, **Low**, or **Muted** sound choice for every beat.
 - Accented first beat, with a persistent highlight and current-beat count during playback.
@@ -40,7 +42,7 @@ Audio plays through the system's default output device. There is no published re
 | Arrow keys with volume focused | Adjust volume by five percentage points |
 | `Space` / `Enter` | Start/stop when the main view or playback button has focus |
 | `T` outside menus | Tap a quarter-note beat to set the tempo |
-| `Tab` / `Shift+Tab` | Move between preset, restore-defaults, tempo, Tap Tempo, meter, beat-sound, volume, and playback controls |
+| `Tab` / `Shift+Tab` | Move between preset, restore-defaults, tempo, meter, beat-sound, volume, playback, and Tap Tempo controls |
 | `Enter` / `Space` on a meter or beat-sound control | Open its menu |
 | Arrow keys / `Enter` inside a menu | Navigate / select an option |
 | `Escape` inside a menu | Close it and return focus to its control |
@@ -63,9 +65,9 @@ After three seconds without tapping, the next tap starts a fresh sequence while 
 
 Use **Beats per bar** to choose the number of beats and **Beat unit** to choose the denominator. BPM always refers to quarter notes (1/4). The selected note unit scales each numbered beat's duration: at 120 BPM, half notes (1/2) last 1 second, quarter notes (1/4) last 500 ms, eighth notes (1/8) last 250 ms, and sixteenth notes (1/16) last 125 ms. For example, 6/8 produces six eighth-note clicks per bar at twice the displayed quarter-note BPM; it does not automatically group them into two dotted-quarter beats.
 
-Select a numbered beat to choose its sound: High, Medium, Low, or Muted. The default pattern uses High on beat 1 and Medium on the remaining beats. Beat 1 has a stronger amplitude with any audible timbre; selecting Muted takes precedence over its accent. Muted beats still advance the count and visual indicator.
+Each block shows a large beat number and its sound. Up to four beats occupy one row; longer meters use four columns in reading order. Select a numbered beat to open its native sound menu: High, Medium, Low, or Muted. The default pattern uses High on beat 1 and Medium on the remaining beats. Beat 1 has a stronger amplitude with any audible timbre; selecting Muted takes precedence over its accent. Muted beats still advance the count and visual indicator.
 
-The active beat remains highlighted between pulses, and the counter shows its position in the bar. Changing the time signature starts a new bar on the audio callback; changing a sound preserves the current beat progression. Shrinking and expanding a bar preserves the sound choices of hidden beats, including across application restarts.
+The star marks beat 1 independently of the playhead. The active beat retains its amber border, fill, and Playing marker between pulses, and the counter shows its position in the bar. Changing the time signature starts a new bar on the audio callback; changing a sound preserves the current beat progression. Shrinking and expanding a bar preserves the sound choices of hidden beats, including across application restarts.
 
 ### Saved settings and window controls
 
@@ -140,14 +142,14 @@ cargo test --locked
 cargo clippy --all-targets --all-features --locked -- -D warnings
 ```
 
-Unit tests cover sample-frame timing, fractional BPM intervals, note-unit duration scaling, bar wrapping, per-beat timbres, first-beat accents, mute, volume, latency-aware visual positions, and settings validation and replacement. UI integration tests use the production view with a device-free audio session to cover controls, initialization cancellation, output failure/retry, meter and per-beat sound menus, keyboard focus restoration, layout with larger text, and persistence across closing and reopening. Persistence tests use temporary directories and never modify personal settings.
+Unit tests cover sample-frame timing, fractional BPM intervals, note-unit duration scaling, bar wrapping, per-beat timbres, first-beat accents, mute, volume, latency-aware visual positions, and settings validation and replacement. UI integration tests use the production view with a device-free audio session to cover controls, initialization cancellation, output failure/retry, meter and per-beat sound menus, keyboard focus restoration, layout with larger text, stable BPM geometry, beat-grid reading order, fixed-footer reachability, and persistence across closing and reopening. Persistence tests use temporary directories and never modify personal settings.
 
 Window-free session tests verify that commands keep the model, running audio, and persisted snapshots coherent, preserve hidden sounds when loading presets or restoring defaults, isolate playback notifications, and flush the final snapshot on close.
 
-Preset tests also cover snapshot fidelity, naming conflicts, rename/delete/undo, backward-compatible settings loading, restore-defaults persistence, live audio updates, and keyboard navigation through a full library at the minimum window size with larger text. To export rendered light/dark and zoomed dialog previews into the temporary directory:
+Preset tests also cover snapshot fidelity, naming conflicts, rename/delete/undo, backward-compatible settings loading, restore-defaults persistence, live audio updates, and keyboard navigation through a full library at the minimum window size with larger text. To export rendered light/dark and zoomed main-window and dialog previews into the temporary directory:
 
 ```sh
-cargo test --locked render_presets_previews -- --ignored
+cargo test --locked render_ -- --ignored --test-threads=1
 ```
 
 An opt-in Linux test opens a real window briefly, minimizes and restores it, and closes it through the title bar without playing audio or reading personal settings:
@@ -169,6 +171,10 @@ The audio callback schedules beats independently of GPUI. The visual indicator u
 ```text
 src/
 ├── main.rs                  # Executable entry point
+├── theme.rs                 # Product theme registration
+├── theme/
+│   ├── metronomo.json       # Light/dark semantic colors and amber interaction states
+│   └── tests.rs             # Text/focus contrast and appearance-switching checks
 ├── app/
 │   └── mod.rs               # GPUI bootstrap, window options, and quit routing
 └── metronome/
@@ -193,6 +199,7 @@ src/
     ├── view.rs              # Window composition, control state, focus, and shortcuts
     ├── view/
     │   ├── header.rs        # Title bar and playback status
+    │   ├── beat_block.rs    # Number, sound, accent, and audio-driven playhead display
     │   ├── tempo_controls.rs
     │   ├── meter_controls.rs
     │   ├── volume_controls.rs

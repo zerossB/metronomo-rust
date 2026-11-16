@@ -1,0 +1,43 @@
+{
+  "name": "Metronomo",
+  "themes": [
+    {
+      "name": "Metronomo Light",
+      "mode": "light",
+      "colors": {
+        "background": "neutral-50",
+        "foreground": "neutral-950",
+        "muted.background": "neutral-100",
+        "muted.foreground": "neutral-600",
+        "border": "neutral-300",
+        "primary.background": "amber-600",
+        "primary.hover.background": "amber-500",
+        "primary.active.background": "amber-600",
+        "primary.foreground": "neutral-950",
+        "ring": "amber-700",
+        "slider.background": "amber-600",
+        "slider.thumb.background": "neutral-50",
+        "progress_bar.background": "amber-600"
+      }
+    },
+    {
+      "name": "Metronomo Dark",
+      "mode": "dark",
+      "colors": {
+        "background": "neutral-950",
+        "foreground": "neutral-100",
+        "muted.background": "neutral-900",
+        "muted.foreground": "neutral-400",
+        "border": "neutral-700",
+        "primary.background": "amber-400",
+        "primary.hover.background": "amber-300",
+        "primary.active.background": "amber-500",
+        "primary.foreground": "neutral-950",
+        "ring": "amber-400",
+        "slider.background": "amber-400",
+        "slider.thumb.background": "neutral-950",
+        "progress_bar.background": "amber-400"
+      }
+    }
+  ]
+}

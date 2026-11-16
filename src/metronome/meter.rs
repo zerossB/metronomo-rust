@@ -24,14 +24,6 @@ impl BeatSound {
         }
     }
 
-    pub(super) fn short_label(self) -> &'static str {
-        match self {
-            Self::Medium => "Mid",
-            Self::Muted => "Mute",
-            _ => self.label(),
-        }
-    }
-
     fn from_bits(bits: u32) -> Self {
         Self::ALL[(bits & 3) as usize]
     }

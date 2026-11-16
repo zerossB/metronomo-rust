@@ -56,6 +56,7 @@ fn open_with_preferences(
 ) -> (AnyWindowHandle, Entity<Metronome>) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::theme::init(cx);
         super::init(cx);
         gpui_kit::open_window(
             WindowOptions {

@@ -15,8 +15,6 @@ fn tab_and_arrow_keys_keep_volume_and_playback_reachable(cx: &mut TestAppContext
         assert_eq!(window.find("tempo-value").label(), Some("119 BPM"));
         window.press("tab", cx);
         assert_eq!(window.find("increase-tempo").focused(), Some(true));
-        window.press("tab", cx);
-        assert_eq!(window.find("tap-tempo").focused(), Some(true));
         for _ in 0..7 {
             window.press("tab", cx);
         }
@@ -134,11 +132,98 @@ fn all_twelve_beat_controls_remain_reachable_in_a_small_zoomed_window(cx: &mut T
     cx.update_window(handle, |_, window, cx| {
         window.simulate_next_frame(cx);
         window.render_frame(cx);
-        assert_eq!(window.find("tap-tempo").focused(), Some(true));
-        assert!(window.find("tap-tempo").visible());
-        window.press("shift-tab", cx);
         assert_eq!(window.find("increase-tempo").focused(), Some(true));
         assert!(window.find("increase-tempo").visible());
     })
     .expect("reveal the tempo controls when navigating back");
+}
+
+#[gpui_kit::test]
+fn beat_blocks_preserve_reading_order_and_the_fixed_footer_across_sizes_and_themes(
+    cx: &mut TestAppContext,
+) {
+    use gpui_kit::component::{Theme, ThemeMode};
+    let (handle, view, _) = open(cx);
+    for mode in [ThemeMode::Light, ThemeMode::Dark] {
+        for (width, height) in [(600., 780.), (480., 720.)] {
+            cx.simulate_window_resize(handle, size(px(width), px(height)));
+            for font_size in [16., 20.] {
+                cx.update(|cx| {
+                    Theme::change(mode, None, cx);
+                    Theme::update(cx, |theme| theme.font_size = px(font_size));
+                });
+                for beats in [1, 4, 5, 8, 12] {
+                    view.update(cx, |view, cx| {
+                        view.set_meter(Meter::default().with_beats(beats), cx)
+                    });
+                    cx.update_window(handle, |_, window, cx| {
+                        window.render_frame(cx);
+                        let columns = beats.min(4);
+                        let grid = window.find("beat-grid").bounds();
+                        let footer = window.find("practice-footer").bounds();
+                        assert!(grid.left() >= px(0.) && grid.right() <= px(width));
+                        for beat in 1..=beats {
+                            let block = window.find(("beat-sound", u32::from(beat))).bounds();
+                            assert!(block.left() >= grid.left() && block.right() <= grid.right());
+                            if beats <= 4 {
+                                assert!(
+                                    window.find(("beat-sound", u32::from(beat))).visible(),
+                                    "{beats} beats, {width}×{height}, font {font_size}"
+                                );
+                                assert!(block.bottom() <= footer.top());
+                            }
+                            if beat > 1 {
+                                let previous =
+                                    window.find(("beat-sound", u32::from(beat - 1))).bounds();
+                                if (beat - 1) % columns == 0 {
+                                    assert!(block.top() >= previous.bottom());
+                                } else {
+                                    assert_eq!(block.top(), previous.top());
+                                    assert!(block.left() >= previous.right());
+                                }
+                            }
+                        }
+                        for id in [
+                            "toggle-playback",
+                            "tap-tempo",
+                            "tap-status",
+                            "volume-controls",
+                        ] {
+                            let bounds = window.find(id).bounds();
+                            assert!(window.find(id).visible(), "{id}");
+                            assert!(bounds.top() >= footer.top() && bounds.bottom() <= px(height));
+                        }
+                        let play = window.find("toggle-playback").bounds();
+                        let tap = window.find("tap-tempo").bounds();
+                        assert_eq!(play.top(), tap.top());
+                        assert_eq!(play.bottom(), tap.bottom());
+                    })
+                    .expect("inspect beat and footer geometry");
+                }
+            }
+        }
+    }
+}
+
+#[gpui_kit::test]
+fn bpm_value_and_adjustment_buttons_do_not_shift_between_two_and_three_digits(
+    cx: &mut TestAppContext,
+) {
+    let (handle, view, _) = open(cx);
+    let mut reference = None;
+    for bpm in [40, 99, 100, 240] {
+        view.read_with(cx, |view, _| view.session.clone())
+            .update(cx, |session, cx| session.set_bpm(bpm, cx));
+        cx.update_window(handle, |_, window, cx| {
+            window.render_frame(cx);
+            let bounds = ["decrease-tempo", "tempo-value", "increase-tempo"]
+                .map(|id| window.find(id).bounds());
+            if let Some(reference) = reference {
+                assert_eq!(bounds, reference);
+            } else {
+                reference = Some(bounds);
+            }
+        })
+        .expect("inspect stable BPM alignment");
+    }
 }

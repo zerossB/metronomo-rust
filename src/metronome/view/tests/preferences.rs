@@ -82,7 +82,7 @@ fn preferences_survive_closing_and_reopening_including_taps_and_hidden_sounds(
         );
         assert_eq!(
             window.find(("beat-sound", 1_u32)).label(),
-            Some("Beat 1: Low")
+            Some("Beat 1: Low, accented")
         );
         assert_eq!(
             window.find(("beat-sound", 2_u32)).label(),

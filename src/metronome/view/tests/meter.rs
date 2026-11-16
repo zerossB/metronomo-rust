@@ -15,7 +15,7 @@ fn meter_and_each_beat_sound_can_be_changed_through_native_menus(cx: &mut TestAp
         assert_eq!(window.find("current-beat").label(), Some("3 / 8"));
         assert_eq!(
             window.find(("beat-sound", 1_u32)).label(),
-            Some("Beat 1: Low")
+            Some("Beat 1: Low, accented")
         );
         assert_eq!(
             window.find(("beat-sound", 2_u32)).label(),
@@ -49,12 +49,16 @@ fn playhead_tracks_muted_beats_between_pulses_and_resets_on_stop(cx: &mut TestAp
         window.render_frame(cx);
         assert_eq!(window.find("current-beat").label(), Some("Beat 2 of 4"));
         assert_eq!(
+            window.find(("beat-playing", 2_u32)).label(),
+            Some("Playing")
+        );
+        assert_eq!(
             window.find(("beat-sound", 2_u32)).label(),
             Some("Beat 2: Muted, playing")
         );
         assert_eq!(
             window.find(("beat-sound", 1_u32)).label(),
-            Some("Beat 1: High")
+            Some("Beat 1: High, accented")
         );
     })
     .expect("inspect silent beat");
@@ -64,11 +68,19 @@ fn playhead_tracks_muted_beats_between_pulses_and_resets_on_stop(cx: &mut TestAp
         window.render_frame(cx);
         assert_eq!(window.find("current-beat").label(), Some("Beat 2 of 4"));
         assert_eq!(
+            window.find(("beat-playing", 2_u32)).label(),
+            Some("Playing")
+        );
+        assert_eq!(
             window.find(("beat-sound", 2_u32)).label(),
             Some("Beat 2: Muted, playing")
         );
         window.click("toggle-playback", cx);
         assert_eq!(window.find("current-beat").label(), Some("4 / 4"));
+        assert_eq!(
+            window.find(("beat-playing", 2_u32)).label(),
+            Some("Inactive")
+        );
         assert_eq!(
             window.find(("beat-sound", 2_u32)).label(),
             Some("Beat 2: Muted")
@@ -113,7 +125,7 @@ fn beat_sound_menus_support_keyboard_selection_and_escape_returns_focus(cx: &mut
         window.render_frame(cx);
         assert_eq!(
             window.find(("beat-sound", 1_u32)).label(),
-            Some("Beat 1: Low")
+            Some("Beat 1: Low, accented")
         );
         assert_eq!(window.find("playback-status").label(), Some("Stopped"));
     })

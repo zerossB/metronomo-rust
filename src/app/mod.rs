@@ -14,6 +14,7 @@ pub(crate) fn run() {
         .with_assets(gpui_kit::assets::Assets)
         .run(|cx| {
             gpui_kit::init(cx);
+            crate::theme::init(cx);
             crate::metronome::init(cx);
 
             cx.bind_keys([

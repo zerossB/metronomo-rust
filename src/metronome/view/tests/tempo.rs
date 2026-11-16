@@ -34,7 +34,7 @@ fn tap_tempo_combines_clicks_shortcuts_and_focused_button_activation(cx: &mut Te
         cx.run_until_parked();
         cx.update_window(handle, |_, window, cx| {
             if key == "enter" {
-                for _ in 0..5 {
+                for _ in 0..13 {
                     window.press("tab", cx);
                 }
                 assert_eq!(window.find("tap-tempo").focused(), Some(true));

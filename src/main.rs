@@ -2,6 +2,7 @@
 
 mod app;
 mod metronome;
+mod theme;
 
 fn main() {
     app::run();

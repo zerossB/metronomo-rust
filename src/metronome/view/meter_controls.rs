@@ -1,10 +1,9 @@
 //! Meter controls and sound menus share the feature view's state and audio playhead.
 
-use super::Metronome;
+use super::{Metronome, beat_block::BeatBlock};
 use crate::metronome::meter::{BeatSound, BeatUnit};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_kit::component::{ActiveTheme as _, Sizable as _, button::Button};
-use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, button::Button};
 use gpui_kit::{App, FocusHandle, Subscription, Window};
 use gpui_kit::{
     Context, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -76,7 +75,7 @@ impl Metronome {
         let columns = if meter.beats() <= 4 {
             u16::from(meter.beats())
         } else {
-            3
+            4
         };
 
         div()
@@ -89,21 +88,6 @@ impl Metronome {
                 div()
                     .flex()
                     .items_center()
-                    .justify_between()
-                    .child(div().text_sm().child("Time signature"))
-                    .child(
-                        div()
-                            .id("current-beat")
-                            .test_support()
-                            .aria_label(status.clone())
-                            .text_sm()
-                            .child(status),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
                     .gap_2()
                     .child(anchored(
                         "count-scroll-anchor",
@@ -111,6 +95,8 @@ impl Metronome {
                         Button::new("beats-per-bar")
                             .track_focus(&self.meter_focus.count)
                             .label(format!("{} beats", meter.beats()))
+                            .disabled(self.closing)
+                            .dropdown_caret(true)
                             .accessibility_label("Beats per bar")
                             .outline()
                             .w_full()
@@ -145,6 +131,8 @@ impl Metronome {
                         Button::new("beat-unit")
                             .track_focus(&self.meter_focus.unit)
                             .label(format!("1/{} note", meter.unit().denominator()))
+                            .disabled(self.closing)
+                            .dropdown_caret(true)
                             .accessibility_label("Beat unit")
                             .outline()
                             .w_full()
@@ -182,6 +170,21 @@ impl Metronome {
             )
             .child(
                 div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(div().text_sm().child("Beats"))
+                    .child(
+                        div()
+                            .id("current-beat")
+                            .test_support()
+                            .aria_label(status.clone())
+                            .text_sm()
+                            .child(status),
+                    ),
+            )
+            .child(
+                div()
                     .id("beat-grid")
                     .test_support()
                     .grid()
@@ -190,52 +193,44 @@ impl Metronome {
                     .children((0..meter.beats()).map(|beat| {
                         let owner = owner.clone();
                         let sound = meter.sound(beat);
-                        let active = current == Some(beat);
-                        let button = Button::new(("beat-sound", u32::from(beat + 1)))
-                            .track_focus(&self.meter_focus.beats[usize::from(beat)])
-                            .label(format!("{} · {}", beat + 1, sound.short_label()))
-                            .accessibility_label(format!(
-                                "Beat {}: {}{}",
-                                beat + 1,
-                                sound.label(),
-                                if active { ", playing" } else { "" }
-                            ))
-                            .outline()
-                            .large()
-                            .w_full()
-                            .when(active, |button| {
-                                button
-                                    .bg(cx.theme().primary.opacity(
-                                        if self.position(cx).is_pulse() {
-                                            0.22
-                                        } else {
-                                            0.10
-                                        },
-                                    ))
-                                    .border_color(cx.theme().primary)
-                                    .text_color(cx.theme().foreground)
+                        let button = BeatBlock::new(
+                            beat,
+                            sound,
+                            self.position(cx),
+                            self.open_beat_menu == Some(beat),
+                        )
+                        .into_button(cx)
+                        .track_focus(&self.meter_focus.beats[usize::from(beat)])
+                        .disabled(self.closing)
+                        .dropdown_menu(move |menu, _, _| {
+                            BeatSound::ALL.into_iter().fold(menu, |menu, choice| {
+                                let owner = owner.clone();
+                                menu.item(
+                                    PopupMenuItem::new(choice.label())
+                                        .checked(choice == sound)
+                                        .on_click(move |_, _, cx| {
+                                            let _ = owner.update(cx, |this, cx| {
+                                                this.set_sound(beat, choice, cx)
+                                            });
+                                        }),
+                                )
                             })
-                            .dropdown_menu(move |menu, _, _| {
-                                BeatSound::ALL.into_iter().fold(menu, |menu, choice| {
-                                    let owner = owner.clone();
-                                    menu.item(
-                                        PopupMenuItem::new(choice.label())
-                                            .checked(choice == sound)
-                                            .on_click(move |_, _, cx| {
-                                                let _ = owner.update(cx, |this, cx| {
-                                                    this.set_sound(beat, choice, cx)
-                                                });
-                                            }),
-                                    )
-                                })
-                            })
-                            .on_open_change(cx.listener(move |_, open, window, cx| {
+                        })
+                        .on_open_change(cx.listener(
+                            move |this, open, window, cx| {
+                                if *open {
+                                    this.open_beat_menu = Some(beat);
+                                } else if this.open_beat_menu == Some(beat) {
+                                    this.open_beat_menu = None;
+                                }
+                                cx.notify();
                                 if !open {
                                     cx.defer_in(window, move |this, window, cx| {
                                         window.focus(&this.meter_focus.beats[usize::from(beat)], cx)
                                     });
                                 }
-                            }));
+                            },
+                        ));
                         anchored(
                             ("beat-scroll-anchor", u32::from(beat + 1)),
                             self.meter_focus.beat_anchors[usize::from(beat)].clone(),
@@ -247,7 +242,7 @@ impl Metronome {
                 div()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child("Choose a sound per beat. Beat 1 is accented."),
+                    .child("Click a beat to choose its sound. ★ marks the accented first beat."),
             )
     }
 }

@@ -446,6 +446,7 @@ fn render_presets_previews() {
     );
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::theme::init(cx);
         crate::metronome::init(cx);
     });
     for (name, mode, width, height, font_size) in [

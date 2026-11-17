@@ -26,6 +26,8 @@ override_dh_auto_install:
 	install -Dm644 packaging/linux/desktop/metronomo.svg debian/metronomo/usr/share/icons/hicolor/scalable/apps/metronomo.svg
 	install -Dm644 LICENSE debian/metronomo/usr/share/doc/metronomo/LICENSE
 	install -Dm644 README.md debian/metronomo/usr/share/doc/metronomo/README.md
+	install -Dm644 SECURITY.md debian/metronomo/usr/share/doc/metronomo/SECURITY.md
+	install -Dm644 CONTRIBUTING.md debian/metronomo/usr/share/doc/metronomo/CONTRIBUTING.md
 	install -Dm644 docs/releases/$(RELEASE_VERSION).md debian/metronomo/usr/share/doc/metronomo/release-notes.md
 	install -Dm644 debian/third-party-notices.txt debian/metronomo/usr/share/doc/metronomo/third-party-notices.txt
 	install -Dm644 debian/build-provenance.json debian/metronomo/usr/share/doc/metronomo/build-provenance.json

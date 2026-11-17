@@ -143,7 +143,7 @@ def main():
     (output / "source.patch").write_bytes(patch)
     paths = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=ROOT).decode().split("\0")
     paths = sorted(set(p for p in paths if p and (p.startswith(("src/", "scripts/", "packaging/", "docs/", ".github/"))
-                       or p in ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "README.md", "LICENSE", "CHANGELOG.md", ".gitignore"))))
+                       or p in ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md", "CONTRIBUTING.md", ".gitignore"))))
     source_manifest = "".join(f"{digest(ROOT / p)}  {p}\n" for p in paths if (ROOT / p).is_file())
     (output / "SOURCE-SHA256SUMS").write_text(source_manifest)
     with tarfile.open(output / "SOURCE.tar.gz", mode="w:gz") as archive:

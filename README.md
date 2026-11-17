@@ -148,6 +148,9 @@ to prepare a version.
 
 ## Contributing
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the pull request process and
+[SECURITY.md](SECURITY.md) to report a vulnerability privately.
+
 Keep changes focused, run `./scripts/check.sh`, and update the relevant guide
 when behavior changes. For audio or timing changes, include the platform and
 conditions used to validate them.

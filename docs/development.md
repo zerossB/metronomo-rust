@@ -47,6 +47,12 @@ After `cargo fetch --locked` populates the dependency cache, run the shared offl
 ./scripts/check.sh
 ```
 
+GitHub runs this script on pull requests and on `main`. Caches for downloaded
+crates and compiled debug/release profiles are separate, with fallback reuse
+after dependency updates. Trusted `main` builds populate caches for future PRs
+and tags; a separate warm-up workflow prepares optimized package compilation.
+See [release caching and recovery](release.md#build-caches-and-publication-recovery).
+
 Its Rust checks are:
 
 ```sh

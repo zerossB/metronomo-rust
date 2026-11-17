@@ -17,7 +17,7 @@ env:
   CARGO_INCREMENTAL: '0'
   CARGO_PROFILE_DEV_DEBUG: '0'
   CARGO_PROFILE_TEST_DEBUG: '0'
-  CARGO_BUILD_JOBS: '2'
+  CARGO_BUILD_JOBS: '4'
 
 jobs:
   build:
@@ -49,13 +49,10 @@ jobs:
       - name: Set up Linux build
         uses: ./.github/actions/setup
         with:
-          cache-prefix: release
+          cache-profile: all
 
       - name: Run development checks
         run: ./scripts/check.sh
-
-      - name: Validate optimized renderer timing
-        run: ./scripts/validation/audio.sh renderer
 
       - name: Build Debian package
         run: ./scripts/release/package-deb.sh
@@ -111,6 +108,12 @@ jobs:
         working-directory: delivery
         run: sha256sum --check SHA256SUMS
 
+      - name: Check out publication tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: tools
+
       - name: Create downloadable release assets
         env:
           RELEASE_VERSION: ${{ needs.build.outputs.version }}
@@ -118,7 +121,8 @@ jobs:
         run: |
           mkdir assets
           cp "delivery/$PACKAGE_FILE" assets/
-          tar -czf "assets/metronomo-$RELEASE_VERSION-linux-amd64.tar.gz" -C delivery .
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+            -czf "assets/metronomo-$RELEASE_VERSION-linux-amd64.tar.gz" -C delivery .
           cd assets
           sha256sum ./*.deb ./*.tar.gz > SHA256SUMS
 
@@ -127,15 +131,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_VERSION: ${{ needs.build.outputs.version }}
-          PRERELEASE: ${{ needs.build.outputs.prerelease }}
         run: |
-          options=()
-          if [[ "$PRERELEASE" == true ]]; then
-            options+=(--prerelease)
-          fi
-          gh release create "$RELEASE_TAG" --draft \
-            --verify-tag --title "Metronomo $RELEASE_VERSION" \
-            --notes-file delivery/RELEASE-NOTES.md "${options[@]}"
-          gh release upload "$RELEASE_TAG" assets/*
-          gh release edit "$RELEASE_TAG" --draft=false
+          python3 tools/scripts/release/publish.py --tag "$RELEASE_TAG" \
+            --assets assets --notes delivery/RELEASE-NOTES.md

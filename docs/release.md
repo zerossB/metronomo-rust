@@ -91,8 +91,9 @@ The toolchain mount must contain the real pinned Linux toolchain, not rustup shi
 
 Source packaging metadata lives in `packaging/linux/debian/`; desktop integration
 files live in `packaging/linux/desktop/`. The build script copies release inputs
-into `target/deb-build.*/source/` and creates the standard top-level `debian/`
-directory there before invoking `dpkg-buildpackage`. Generated packages go to
+into `target/deb-build/source/` and creates the standard top-level `debian/`
+directory there before invoking `dpkg-buildpackage`. A file lock serializes
+local package builds so their stable source path can be reused safely. Generated packages go to
 `dist/build/`, and the assembled delivery goes to `dist/<version>/`.
 
 For clean installation/lifecycle checks, run the following once for each version,
@@ -174,8 +175,10 @@ notes before compiling. Prerelease tags such as `v0.2.0-rc.1` require Cargo vers
 `0.2.0-rc.1`, Debian version `0.2.0~rc.1-1`, and notes named `0.2.0-rc.1.md`;
 they are published with GitHub's prerelease flag.
 
-The build runs on Ubuntu 24.04 amd64, repeats development checks, runs the
-optimized offline renderer measurements, and builds the `.deb`. Clean Ubuntu
+The build runs on Ubuntu 24.04 amd64 and repeats development checks. The Debian
+build runs the optimized offline renderer measurements and builds the executable
+in the same source directory and debhelper environment, preserving reusable
+Cargo fingerprints. Clean Ubuntu
 24.04 and 26.04 containers then check installation, shared-library resolution,
 reinstallation, removal, and preference-marker retention. A failed check prevents
 publication. Failure evidence is retained as an Actions artifact when available.
@@ -190,13 +193,17 @@ After success, a separate job publishes a GitHub Release with:
 The workflow uses the repository's automatic `GITHUB_TOKEN`; no personal token
 or Packages credentials are needed. Only the publication job requests
 `contents: write`. Third-party Actions are pinned to commit SHAs. Releases are
-created for existing tags and existing releases are not overwritten by retries.
+created for existing tags. Retries reuse a draft or add missing assets to a
+mutable published release. Existing assets must match their SHA256 digests;
+conflicting assets and incomplete immutable releases require a new version.
 
 The release commit must be reachable from `main`. Only the maintainer may create
 `v*` tags, and version tags are protected against updates and deletion. The
 workflow creates a draft, uploads all assets, and then publishes it so immutable
 release protection locks a complete delivery. A failed upload leaves a draft
-for investigation; the workflow does not overwrite an existing release.
+for investigation. Rerunning publication resumes the draft without overwriting
+uploaded assets. Download bundles use deterministic tar metadata so the same
+delivery has the same checksum on retries.
 
 Changes to `main` go through pull requests and required checks. Published
 releases cannot be repaired by replacing their assets or moving their tags;
@@ -207,3 +214,37 @@ Tagged builds are distributed automatically. Their manifest still records missin
 desktop/audio acceptance evidence, and automated container checks do not approve
 those measurements. `--require-ready` remains available for a local delivery
 that must satisfy the full acceptance protocol before distribution.
+
+## Build caches and publication recovery
+
+The setup action stores Cargo downloads, debug compilation, and release
+compilation in separate caches. Download caches survive Rust-source changes.
+Compiled caches include the toolchain, manifests, lockfile, and source hashes,
+with fallback keys to reuse unchanged dependencies after a lockfile update.
+Cargo still checks fingerprints and rebuilds affected crates.
+
+Tests also run on pushes to `main`, which populates the trusted debug cache
+available to PRs and version tags. `build-cache.yml` warms optimized compilation
+on `main` when build inputs change. These caches are scoped by GitHub: a cache
+saved only by a PR or tag does not become a shared default-branch cache. The
+first warm-up is a full build; subsequent runs can reuse it. Four build workers
+use the standard public Linux runner's four CPUs.
+
+To retry publication after a successful build, use **Actions → Recover release
+publication → Run workflow**, select `main`, and supply the version tag and
+original Release run ID. This downloads the verified `linux-release` artifact
+without running Cargo again. The workflow verifies the original run was a tag
+push through `release.yml`, its package-build job succeeded, the commit matches
+the protected tag and belongs to `main`, and delivery checksums and manifest
+match. Artifacts from PRs or another commit are rejected.
+
+For example, to recover the original `v0.1.0` build:
+
+```sh
+gh workflow run publish.yml --ref main \
+  -f tag=v0.1.0 -f run-id=44173631985
+```
+
+Recovery requires the original artifact to remain available (currently retained
+for 14 days). A published immutable release is never modified. An older mutable
+release can receive missing assets, but existing files are never replaced.

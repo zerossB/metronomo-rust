@@ -1,0 +1,22 @@
+{
+  "crate": "perf-event2",
+  "version": "0.7.4",
+  "crate_vcs": {
+    "git": {
+      "sha1": "aa2a46d2929f6b063dfb6be71881977dd79dc83f"
+    },
+    "path_in_vcs": "perf-event"
+  },
+  "files": [
+    {
+      "file": "LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/Phantomical/perf-event/aa2a46d2929f6b063dfb6be71881977dd79dc83f/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    {
+      "file": "LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/Phantomical/perf-event/aa2a46d2929f6b063dfb6be71881977dd79dc83f/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  ]
+}

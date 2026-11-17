@@ -3,6 +3,8 @@ name = "metronomo"
 version = "0.1.0"
 edition = "2024"
 description = "A desktop metronome built with Rust and GPUI"
+license = "MIT"
+authors = ["Guilherme Haynes Howe"]
 publish = false
 
 [dependencies]

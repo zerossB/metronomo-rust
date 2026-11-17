@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>Metronomo</title>
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="#e5a438"/>
+  <path d="M53 27h22l21 73H32z" fill="none" stroke="#241b10" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M64 87 84 40M48 87h32" fill="none" stroke="#241b10" stroke-width="6" stroke-linecap="round"/>
+  <path d="m74 50 10 4-5 12-10-4z" fill="#241b10"/>
+</svg>

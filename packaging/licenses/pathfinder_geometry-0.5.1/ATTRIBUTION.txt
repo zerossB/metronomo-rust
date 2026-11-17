@@ -1,0 +1,6 @@
+Authors declared in the published Cargo.toml:
+Patrick Walton <pcwalton@mimiga.net>
+
+The source archive declares MIT/Apache-2.0. It contains no license text.
+This notice supplies the standard Apache-2.0 text under that declaration;
+it is not a recovered upstream copyright notice.

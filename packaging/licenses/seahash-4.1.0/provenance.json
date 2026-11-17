@@ -1,0 +1,23 @@
+{
+  "crate_version": "seahash-4.1.0",
+  "method": "standard license text plus unmodified author attribution from published Cargo.toml; upstream text unavailable",
+  "declared_license": "MIT",
+  "selected_license": "MIT",
+  "authors": [
+    "ticki <ticki@users.noreply.github.com>",
+    "Tom Almeida <tom@tommoa.me>"
+  ],
+  "source_manifest_sha256": "1d610f6d1bce065add6ec5f2fb764e97eeda505afbe26271acc5f3d73a8c410a",
+  "files": [
+    {
+      "file": "ATTRIBUTION.txt",
+      "source": "published Cargo.toml",
+      "sha256": "fd9fa6702ff4cca1909ab0db7966dfc84d43cfb25b8aea547e5332cc957bfa7a"
+    },
+    {
+      "file": "LICENSE-MIT",
+      "url": "https://opensource.org/license/mit",
+      "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d"
+    }
+  ]
+}

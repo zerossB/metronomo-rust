@@ -1,0 +1,22 @@
+{
+  "crate": "gpui-kit",
+  "version": "0.9.1",
+  "crate_vcs": {
+    "git": {
+      "sha1": "39ab849a93b5f15507b969164d49891db8d5b470"
+    },
+    "path_in_vcs": "crates/kit"
+  },
+  "files": [
+    {
+      "file": "LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/longbridge/gpui-kit/39ab849a93b5f15507b969164d49891db8d5b470/LICENSE-APACHE",
+      "sha256": "d1b0449e5478c574ba4f686c2656df7fe77d66821a61f8b6ed3378a58ed9a811"
+    },
+    {
+      "file": "LICENSE-DOCS.md",
+      "url": "https://raw.githubusercontent.com/longbridge/gpui-kit/39ab849a93b5f15507b969164d49891db8d5b470/LICENSE-DOCS.md",
+      "sha256": "8a9ccf144b2d5bf5aae56abdc6e723e17e1ba4de1f5d515b3b644288fd4fc16f"
+    }
+  ]
+}

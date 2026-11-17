@@ -1,0 +1,17 @@
+{
+  "crate": "xim-ctext",
+  "version": "0.3.0",
+  "crate_vcs": {
+    "git": {
+      "sha1": "65f77e44524ba487285a63aac4080faf2c05b4ed"
+    },
+    "path_in_vcs": "xim-ctext"
+  },
+  "files": [
+    {
+      "file": "LICENSE",
+      "url": "https://raw.githubusercontent.com/Riey/xim-rs/65f77e44524ba487285a63aac4080faf2c05b4ed/LICENSE",
+      "sha256": "efa1224931b98468f5005f77285457f8d2eab0a77a15941aa10abbab1ae9a74e"
+    }
+  ]
+}

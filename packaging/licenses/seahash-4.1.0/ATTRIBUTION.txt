@@ -1,0 +1,7 @@
+Authors declared in the published Cargo.toml:
+ticki <ticki@users.noreply.github.com>
+Tom Almeida <tom@tommoa.me>
+
+The source archive declares MIT. It contains no license text.
+This notice supplies the standard MIT text under that declaration;
+it is not a recovered upstream copyright notice.

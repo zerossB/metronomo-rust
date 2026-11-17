@@ -236,6 +236,79 @@ fn control_snapshots_clamp_values_and_only_restart_on_transport_changes() {
 }
 
 #[test]
+fn advisory_notifications_are_counted_without_failing_playback() {
+    let diagnostics = Diagnostics::default();
+    let (mut producer, mut consumer) = RingBuffer::new(1);
+    for kind in [
+        cpal::ErrorKind::Xrun,
+        cpal::ErrorKind::DeviceChanged,
+        cpal::ErrorKind::RealtimeDenied,
+    ] {
+        report_stream_error(kind, &diagnostics, &mut producer);
+    }
+    assert!(consumer.pop().is_err());
+    let snapshot = diagnostics.snapshot();
+    assert_eq!(
+        (
+            snapshot.xruns,
+            snapshot.device_changes,
+            snapshot.realtime_denied
+        ),
+        (1, 1, 1)
+    );
+    assert_eq!(snapshot.stream_errors, 0);
+    assert!(snapshot.notices_changed(DiagnosticSnapshot::default()));
+}
+
+#[test]
+fn fatal_errors_are_counted_even_when_the_error_queue_is_full() {
+    let diagnostics = Diagnostics::default();
+    let (mut producer, mut consumer) = RingBuffer::new(1);
+    for _ in 0..3 {
+        report_stream_error(
+            cpal::ErrorKind::DeviceNotAvailable,
+            &diagnostics,
+            &mut producer,
+        );
+    }
+    let snapshot = diagnostics.snapshot();
+    assert_eq!(snapshot.stream_errors, 3);
+    assert_eq!(snapshot.dropped_error_events, 2);
+    assert_eq!(consumer.pop(), Ok(cpal::ErrorKind::DeviceNotAvailable));
+}
+
+#[test]
+fn full_visual_queue_never_interrupts_sample_rendering() {
+    let controls = Controls::new();
+    let (mut producer, _consumer) = RingBuffer::new(1);
+    let mut renderer = ClickRenderer::new(48_000);
+    let mut samples = vec![0_f32; 48_000];
+    renderer.render(&mut samples, 1, playing(240, 60), |offset, beat| {
+        controls.diagnostics.beat();
+        if producer
+            .push(Beat {
+                at: Instant::now() + Duration::from_secs_f64(offset as f64 / 48_000.),
+                interval: Duration::from_millis(250),
+                beat,
+                generation: 1,
+            })
+            .is_err()
+        {
+            controls.diagnostics.dropped_visual();
+        }
+    });
+    let snapshot = controls.diagnostics.snapshot();
+    assert_eq!((snapshot.beats, snapshot.dropped_visual_events), (4, 3));
+    for start in [0, 12_001, 24_001, 36_001] {
+        assert!(
+            samples[start..start + 1200]
+                .iter()
+                .any(|sample| sample.abs() > 0.01)
+        );
+    }
+}
+
+#[test]
 #[ignore = "Plays a short click through the real default output; requires an audio session."]
 fn default_output_audio_smoke() {
     let mut output = open_default().expect("open real default output");

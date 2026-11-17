@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "scenario": "ubuntu-24.04-wayland",
+  "status": "pending",
+  "source_sha256": null,
+  "package_sha256": null,
+  "environment": {
+    "os_release": null,
+    "desktop_session": null,
+    "application_display_backend": null,
+    "gpu_driver": null,
+    "audio_device": null,
+    "sample_rate_hz": null,
+    "display_refresh_hz": null
+  },
+  "checks": {
+    "ten_minute_desktop_playback": false,
+    "no_audible_missing_or_duplicate_clicks": false,
+    "tempo_volume_meter_presets": false,
+    "minimize_restore": false,
+    "stop_restart": false,
+    "unavailable_output_retry": false,
+    "stream_failure_retry": false,
+    "preferences_close_reopen": false,
+    "clean_install_without_rust": false,
+    "menu_launch": false,
+    "reinstall": false,
+    "remove_preserves_preferences": false
+  },
+  "measurements": {
+    "maximum_input_to_frame_ms": null,
+    "maximum_audio_visual_difference_ms": null,
+    "method_and_uncertainty": null
+  },
+  "evidence": [],
+  "reviewer": null,
+  "notes": "Fill only from actual observations. Automated snapshots and backend timestamps are not physical output or desktop-frame evidence."
+}

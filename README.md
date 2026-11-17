@@ -6,7 +6,7 @@ A desktop metronome built with Rust and GPUI, designed to help musicians practic
 
 **Early development.** The application provides synthesized metronome clicks, BPM and volume controls, and a visual beat indicator in a theme-aware GPUI Kit window. The title bar provides desktop window controls. Closing the last window or using `Ctrl+Q` / `Cmd+Q` exits the application after pending settings saves finish.
 
-Audio plays through the system's default output device. There is no published release.
+Audio plays through the system's default output device. The **v0.1.0 Linux release candidate** has an Ubuntu `.deb` packaging workflow. There is no published release; the [validation report](docs/validation/report.md) records completed checks and outstanding desktop/audio acceptance evidence.
 
 ## Goals
 
@@ -99,6 +99,29 @@ Names are trimmed, unique without regard to case, and limited to 64 characters. 
 
 The application uses **Rust 2024**, **Cargo**, and **GPUI** through **GPUI Kit**. The `gpui-kit` dependency supplies the framework, platform backend, styled components, and default assets through one facade. Audio uses **CPAL**, with a precomputed click and sample-frame scheduling. A bounded **rtrb** queue carries beat timestamps to the UI without blocking the audio callback.
 
+## Install the Linux release candidate
+
+The intended installation targets are **Ubuntu 24.04 and 26.04, amd64**, with X11 or Wayland and a Vulkan-capable graphics driver. These are validation targets; consult the [validation report](docs/validation/report.md) for actual results. Packages for macOS, Windows, ARM64, and other Linux distributions are outside v0.1.0.
+
+When a candidate delivery directory is available, verify its checksums and install:
+
+```sh
+cd dist/0.1.0
+sha256sum --check SHA256SUMS
+sudo apt install ./metronomo_0.1.0-1_amd64.deb
+```
+
+Launch **Metronomo** from the application menu or run `metronomo`. The installed app needs no Rust toolchain or development headers. Remove it with `sudo apt remove metronomo`; removal and reinstallation preserve personal preferences.
+
+To generate the package from source, follow the [Ubuntu 24.04 baseline build and release procedure](docs/release.md). The output includes the `.deb`, release notes, checksums, evidence, and a manifest. `ready_to_publish` stays false while acceptance evidence is missing or stale.
+
+### Audio and graphics troubleshooting
+
+- If Start reports an output failure, select a working default output in your desktop sound settings, connect speakers/headphones, and press Start again. The app does not select devices or restart the system audio server.
+- If the window cannot open, check that a graphical session and Vulkan-capable driver are available. `libvulkan1` is the loader; a working GPU driver is still required. Headless containers do not establish desktop compatibility.
+- Callback underruns, route changes, realtime-scheduling denials, and discarded events are counted internally and logged from the consumer thread. No logging or report-file I/O runs inside the audio callback. Absence of reported underruns is not proof of glitch-free physical output.
+- If settings fail to load or save, the inline warning identifies the failure. Check permissions on the configuration directory; do not remove your settings to troubleshoot an unrelated audio failure.
+
 ## Getting started
 
 ### Requirements
@@ -107,7 +130,7 @@ The application uses **Rust 2024**, **Cargo**, and **GPUI** through **GPUI Kit**
 - A native compiler and linker for your operating system.
 - A graphical desktop session and a compatible graphics driver.
 
-On Linux, GPUI Kit enables both X11 and Wayland. Building requires `pkg-config` and development libraries for Fontconfig, FreeType, XKB, X11, and Wayland. Running requires a Vulkan-capable graphics driver. CPAL also requires the ALSA development library (`libasound2-dev` on Ubuntu/Debian). Package names vary by distribution.
+On Linux, GPUI Kit enables both X11 and Wayland. Building requires `pkg-config` and development libraries for Fontconfig, FreeType, XKB, X11, and Wayland. Running requires a Vulkan-capable graphics driver. CPAL also requires the ALSA development library (`libasound2-dev` on Ubuntu/Debian). The shared check script additionally uses Python 3 and `desktop-file-validate` (`desktop-file-utils` on Ubuntu). Package names vary by distribution.
 
 On Ubuntu, the XKB bridge for X11 is provided by `libxkbcommon-x11-dev`. If linking fails with `unable to find library -lxkbcommon-x11`, install it:
 
@@ -115,7 +138,7 @@ On Ubuntu, the XKB bridge for X11 is provided by `libxkbcommon-x11-dev`. If link
 sudo apt-get install libxkbcommon-x11-dev libasound2-dev
 ```
 
-Development currently targets Linux. macOS and Windows have not been validated for this application; GPUI's platform requirements still apply.
+Development targets Linux. The release matrix covers Ubuntu 24.04/26.04 amd64 and X11/Wayland; outstanding checks are listed in the validation report. macOS and Windows have not been validated for this application; GPUI's platform requirements still apply.
 
 ### Run locally
 
@@ -134,6 +157,14 @@ cargo build --release --locked
 ```
 
 ### Development checks
+
+After `cargo fetch --locked` populates the dependency cache, run the shared offline check script:
+
+```sh
+./scripts/check.sh
+```
+
+Its Rust checks are:
 
 ```sh
 cargo fmt --all -- --check
@@ -164,9 +195,54 @@ An opt-in test opens the **real default output** and plays quiet clicks for abou
 cargo test --locked default_output_audio_smoke -- --ignored --nocapture
 ```
 
+For the opt-in optimized timing matrix and thirty-minute renderer simulations:
+
+```sh
+./scripts/validation/audio.sh renderer
+```
+
+For a ten-minute real-device diagnostic run, which plays quiet clicks:
+
+```sh
+METRONOMO_VALIDATION_DIR="$PWD/dist/evidence/ubuntu-26.04-wayland" \
+  ./scripts/validation/audio.sh device
+```
+
+Reports include device/sample format, environment, duration, musical changes, callback/error/event counters, and a source fingerprint. Offline sample precision, predicted playback timing, and actual desktop/acoustic observations remain separate evidence. See the [recording protocol](docs/release.md) for the 100 ms responsiveness and 50 ms audio-visual acceptance checks.
+
 The audio callback schedules beats independently of GPUI. The visual indicator uses CPAL's predicted playback time, including the reported output-buffer latency, and refreshes approximately every 16 ms. Visual pulses last up to 100 ms and shorten to half the click interval at faster note rates so successive beats remain distinct. Actual visual alignment is limited by backend timestamp accuracy and display refresh. The stream stays open and produces silence while stopped, and closes with the view.
 
 ## Project structure
+
+Build, packaging, and validation files are grouped by purpose:
+
+```text
+packaging/
+├── linux/
+│   ├── desktop/             # Application menu entry and icon
+│   ├── debian/              # Source metadata and rules for the .deb package
+│   └── containers/          # Ubuntu baseline build environment
+└── licenses/                # Versioned third-party license supplements
+scripts/
+├── check.sh                 # Development checks
+├── release/                 # Package build, staging, notices, provenance, and delivery
+│   └── tests/               # Release automation tests
+└── validation/              # Audio measurements and package installation checks
+docs/
+├── release.md               # Build and release procedure
+├── releases/                # Release notes by version
+└── validation/              # Acceptance report and recording template
+target/                      # Generated build output and temporary package sources (ignored)
+dist/                        # Generated packages, deliveries, and evidence (ignored)
+```
+
+Run `./scripts/check.sh` for development checks,
+`./scripts/release/package-deb.sh` to build the Ubuntu package, and
+`./scripts/validation/audio.sh renderer` for offline audio measurements.
+See [release preparation](docs/release.md) for environment requirements and
+device/installation validation commands.
+
+The application source is organized as follows:
 
 ```text
 src/
@@ -246,4 +322,4 @@ Keep changes focused, explain their purpose, and update documentation when behav
 
 ## License
 
-A license has not been selected yet. Licensing terms will be documented in a `LICENSE` file when chosen.
+The project is licensed under [MIT](LICENSE). Bundled dependencies and assets retain their own licenses. The package includes generated third-party notices in `/usr/share/doc/metronomo/third-party-notices.txt`; see [release preparation](docs/release.md) for their source and provenance.

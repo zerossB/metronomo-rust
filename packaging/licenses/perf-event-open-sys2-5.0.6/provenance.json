@@ -1,0 +1,22 @@
+{
+  "crate": "perf-event-open-sys2",
+  "version": "5.0.6",
+  "crate_vcs": {
+    "git": {
+      "sha1": "6e5e01cfec051b6ed683376bbd27be2198c4fca0"
+    },
+    "path_in_vcs": "perf-event-open-sys"
+  },
+  "files": [
+    {
+      "file": "LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/Phantomical/perf-event/6e5e01cfec051b6ed683376bbd27be2198c4fca0/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    {
+      "file": "LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/Phantomical/perf-event/6e5e01cfec051b6ed683376bbd27be2198c4fca0/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  ]
+}

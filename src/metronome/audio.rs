@@ -19,7 +19,9 @@ use super::{
     meter::Meter,
 };
 
+mod diagnostics;
 mod renderer;
+use diagnostics::{DiagnosticSnapshot, Diagnostics};
 use renderer::ClickRenderer;
 
 const PULSE_DURATION: Duration = Duration::from_millis(100);
@@ -106,11 +108,13 @@ impl PlaybackPosition {
 
 struct Controls {
     settings: AtomicU64,
+    diagnostics: Diagnostics,
 }
 
 impl Controls {
     fn new() -> Self {
         Self {
+            diagnostics: Diagnostics::default(),
             settings: AtomicU64::new(
                 Settings {
                     bpm: DEFAULT_BPM,
@@ -204,15 +208,30 @@ struct AudioOutput {
     controls: Arc<Controls>,
     timeline: Timeline,
     errors: Consumer<cpal::ErrorKind>,
+    last_notices: DiagnosticSnapshot,
+    #[cfg(test)]
+    device_info: serde_json::Value,
 }
 
 pub(super) fn open_default() -> Result<Box<dyn AudioPlayback>, AudioError> {
+    open_default_output().map(|output| Box::new(output) as Box<dyn AudioPlayback>)
+}
+
+fn open_default_output() -> Result<AudioOutput, AudioError> {
     let device = cpal::default_host()
         .default_output_device()
         .ok_or(AudioError::NoDevice)?;
     let supported = device.default_output_config().map_err(AudioError::Device)?;
     let format = supported.sample_format();
     let config = supported.config();
+    #[cfg(test)]
+    let device_info = serde_json::json!({
+        "device": device.description().map_err(AudioError::Device)?.name(),
+        "sample_rate_hz": config.sample_rate,
+        "channels": config.channels,
+        "sample_format": format.to_string(),
+        "host": cpal::default_host().id().name(),
+    });
     let controls = Arc::new(Controls::new());
     let (producer, consumer) = RingBuffer::new(128);
     let (error_producer, errors) = RingBuffer::new(8);
@@ -310,17 +329,20 @@ pub(super) fn open_default() -> Result<Box<dyn AudioPlayback>, AudioError> {
     }
     .map_err(AudioError::Device)?;
     stream.play().map_err(AudioError::Device)?;
-    Ok(Box::new(AudioOutput {
+    Ok(AudioOutput {
         _stream: stream,
         controls,
         errors,
+        last_notices: DiagnosticSnapshot::default(),
+        #[cfg(test)]
+        device_info,
         timeline: Timeline {
             beats: consumer,
             pulse_until: None,
             active_beat: None,
             generation: 0,
         },
-    }))
+    })
 }
 
 fn build<T: SizedSample + FromSample<f32>>(
@@ -333,6 +355,7 @@ fn build<T: SizedSample + FromSample<f32>>(
 ) -> Result<Stream, cpal::Error> {
     let channels = usize::from(config.channels);
     let rate = f64::from(config.sample_rate);
+    let error_controls = controls.clone();
     device.build_output_stream(
         config,
         move |output: &mut [T], info| {
@@ -340,26 +363,26 @@ fn build<T: SizedSample + FromSample<f32>>(
             let timestamp = info.timestamp();
             let playback = now + timestamp.playback.duration_since(timestamp.callback);
             let settings = controls.load();
+            controls.diagnostics.rendered(output.len() / channels);
             let interval = Duration::from_secs_f64(
                 60. * settings.meter.unit().quarter_notes() / f64::from(settings.bpm),
             );
             renderer.render(output, channels, settings, |offset, beat| {
-                let _ = beats.push(Beat {
-                    at: playback + Duration::from_secs_f64(offset as f64 / rate),
-                    interval,
-                    generation: settings.generation,
-                    beat,
-                });
+                controls.diagnostics.beat();
+                if beats
+                    .push(Beat {
+                        at: playback + Duration::from_secs_f64(offset as f64 / rate),
+                        interval,
+                        generation: settings.generation,
+                        beat,
+                    })
+                    .is_err()
+                {
+                    controls.diagnostics.dropped_visual();
+                }
             });
         },
-        move |error| match error.kind() {
-            cpal::ErrorKind::DeviceChanged
-            | cpal::ErrorKind::Xrun
-            | cpal::ErrorKind::RealtimeDenied => {}
-            _ => {
-                let _ = errors.push(error.kind());
-            }
-        },
+        move |error| report_stream_error(error.kind(), &error_controls.diagnostics, &mut errors),
         Some(Duration::from_secs(3)),
     )
 }
@@ -370,6 +393,12 @@ impl AudioPlayback for AudioOutput {
     }
 
     fn poll(&mut self, now: Instant) -> Result<PlaybackPosition, AudioError> {
+        // Formatting and stderr I/O belong on the consumer, never on an audio callback.
+        let snapshot = self.controls.diagnostics.snapshot();
+        if snapshot.notices_changed(self.last_notices) {
+            eprintln!("Audio diagnostics (cumulative): {snapshot:?}");
+            self.last_notices = snapshot;
+        }
         if let Ok(kind) = self.errors.pop() {
             return Err(AudioError::StreamFailed(kind));
         }
@@ -377,5 +406,18 @@ impl AudioPlayback for AudioOutput {
     }
 }
 
+fn report_stream_error(
+    kind: cpal::ErrorKind,
+    diagnostics: &Diagnostics,
+    errors: &mut Producer<cpal::ErrorKind>,
+) {
+    if diagnostics.stream_error(kind) && errors.push(kind).is_err() {
+        diagnostics.dropped_error();
+    }
+}
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod validation;

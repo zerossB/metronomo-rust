@@ -1,0 +1,22 @@
+{
+  "crate_version": "mac-0.1.1",
+  "method": "standard license text plus unmodified author attribution from published Cargo.toml; upstream text unavailable",
+  "declared_license": "MIT/Apache-2.0",
+  "selected_license": "Apache-2.0",
+  "authors": [
+    "Jonathan Reem <jonathan.reem@gmail.com>"
+  ],
+  "source_manifest_sha256": "6d465c5e5a4b3e197049e9fb7393b2f996c1c654e6ded700afce046fac2f7969",
+  "files": [
+    {
+      "file": "ATTRIBUTION.txt",
+      "source": "published Cargo.toml",
+      "sha256": "653c486bf396682e4e41720601c14a36d16d6d130a5ddc40fbecf198e475be11"
+    },
+    {
+      "file": "LICENSE-Apache-2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  ]
+}

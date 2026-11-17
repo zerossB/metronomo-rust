@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Metronomo
+GenericName=Metronome
+Comment=Practice music with a steady pulse
+Exec=metronomo
+TryExec=metronomo
+Icon=metronomo
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+Keywords=metronome;tempo;practice;music;
+StartupNotify=false
+StartupWMClass=com.haynestec.metronomo

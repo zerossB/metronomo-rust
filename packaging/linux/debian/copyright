@@ -1,5 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: metronomo
+Upstream-Contact: Guilherme Haynes Howe <zerossb@gmail.com>
+Source: https://github.com/zerossB/metronomo-rust
 
 Files: *
 Copyright: 2026 Guilherme Haynes Howe

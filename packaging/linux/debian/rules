@@ -10,6 +10,8 @@ override_dh_auto_configure:
 	python3 scripts/release/third_party_notices.py debian/third-party-notices.txt
 	python3 scripts/release/build_provenance.py debian/build-provenance.json
 	desktop-file-validate packaging/linux/desktop/metronomo.desktop
+	python3 scripts/release/desktop_metadata.py --output debian/com.haynestec.metronomo.metainfo.xml
+	appstreamcli validate --no-net --strict debian/com.haynestec.metronomo.metainfo.xml
 
 override_dh_auto_build:
 	./scripts/validation/audio.sh renderer
@@ -24,7 +26,13 @@ override_dh_strip:
 override_dh_auto_install:
 	install -Dm755 $(CARGO_TARGET_DIR)/release/metronomo debian/metronomo/usr/bin/metronomo
 	install -Dm644 packaging/linux/desktop/metronomo.desktop debian/metronomo/usr/share/applications/com.haynestec.metronomo.desktop
-	install -Dm644 packaging/linux/desktop/metronomo.svg debian/metronomo/usr/share/icons/hicolor/scalable/apps/metronomo.svg
+	install -Dm644 packaging/linux/desktop/metronomo.svg debian/metronomo/usr/share/icons/hicolor/scalable/apps/com.haynestec.metronomo.svg
+	set -e; for size in 64 128 256; do \
+		mkdir -p debian/metronomo/usr/share/icons/hicolor/$${size}x$${size}/apps; \
+		rsvg-convert -w $$size -h $$size packaging/linux/desktop/metronomo.svg \
+			-o debian/metronomo/usr/share/icons/hicolor/$${size}x$${size}/apps/com.haynestec.metronomo.png; \
+	done
+	install -Dm644 debian/com.haynestec.metronomo.metainfo.xml debian/metronomo/usr/share/metainfo/com.haynestec.metronomo.metainfo.xml
 	install -Dm644 LICENSE debian/metronomo/usr/share/doc/metronomo/LICENSE
 	install -Dm644 README.md debian/metronomo/usr/share/doc/metronomo/README.md
 	install -Dm644 SECURITY.md debian/metronomo/usr/share/doc/metronomo/SECURITY.md
@@ -33,9 +41,10 @@ override_dh_auto_install:
 	install -Dm644 debian/third-party-notices.txt debian/metronomo/usr/share/doc/metronomo/third-party-notices.txt
 	install -Dm644 debian/build-provenance.json debian/metronomo/usr/share/doc/metronomo/build-provenance.json
 	cp -a docs debian/metronomo/usr/share/doc/metronomo/docs
+	appstreamcli validate-tree --no-net --strict debian/metronomo
 
 override_dh_compress:
 	dh_compress -X.md -X.json -Xthird-party-notices.txt
 
 override_dh_auto_clean:
-	rm -f debian/third-party-notices.txt debian/build-provenance.json
+	rm -f debian/third-party-notices.txt debian/build-provenance.json debian/com.haynestec.metronomo.metainfo.xml

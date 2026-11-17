@@ -96,6 +96,34 @@ directory there before invoking `dpkg-buildpackage`. A file lock serializes
 local package builds so their stable source path can be reused safely. Generated packages go to
 `dist/build/`, and the assembled delivery goes to `dist/<version>/`.
 
+### Software-center metadata
+
+The package installs an AppStream component in
+`/usr/share/metainfo/com.haynestec.metronomo.metainfo.xml`. Its name, developer,
+MIT license, English/Brazilian Portuguese descriptions, project links and
+screenshots come from the template in `packaging/linux/desktop/`. The build
+fills in the version from Cargo and the release date from the first Debian
+changelog entry, so a new version does not inherit stale release information.
+The component, desktop launcher and scalable/64/128/256-pixel icons share the
+`com.haynestec.metronomo` identity. PNG icons are generated from the existing SVG
+with `rsvg-convert` (`librsvg2-bin`); generated icons are not committed.
+
+PR checks validate the generated XML with `appstreamcli`. Debian builds also
+validate the installed file tree, and clean-install checks verify the metadata,
+icons and launcher after installation and their removal when uninstalling.
+The main build's **Warm release build cache** workflow retains the candidate
+`.deb` as the `metronomo-linux-amd64-candidate` artifact for seven days. This is
+an inspection build; published releases remain tied to version tags.
+
+Software centers differ in their handling of local files. In particular,
+[Ubuntu App Center's local-DEB reader](https://github.com/ubuntu/app-center/blob/main/packages/app_center/lib/deb/local_deb_model.dart)
+uses PackageKit details rather than the bundled AppStream component, and does
+not supply a publication date. Some fields can therefore remain unknown when
+opening a downloaded `.deb`, even when its metadata is complete. Catalog-based
+views can use the AppStream information. A third-party-source warning is not
+removed by metadata, and a native Debian package remains unrestricted; it is
+not sandboxed by adding a license or developer name.
+
 For clean installation/lifecycle checks, run the following once for each version,
 replacing `24.04` with `26.04` for the second run. This script deliberately refuses
 to install/remove packages outside a disposable container:

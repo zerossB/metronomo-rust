@@ -2,9 +2,13 @@ Source: metronomo
 Section: sound
 Priority: optional
 Maintainer: Guilherme Haynes Howe <zerossb@gmail.com>
+Homepage: https://github.com/zerossB/metronomo-rust
+Vcs-Git: https://github.com/zerossB/metronomo-rust.git
+Vcs-Browser: https://github.com/zerossB/metronomo-rust
 Build-Depends: debhelper-compat (= 13), pkg-config, libasound2-dev,
  libfontconfig1-dev, libfreetype-dev, libxkbcommon-dev, libxkbcommon-x11-dev,
- libx11-xcb-dev, libwayland-dev, python3, desktop-file-utils
+ libx11-xcb-dev, libwayland-dev, python3, desktop-file-utils, appstream,
+ librsvg2-bin
 Standards-Version: 4.7.0
 Rules-Requires-Root: no
 
@@ -13,7 +17,9 @@ Architecture: amd64
 Depends: ${shlibs:Depends}, ${misc:Depends}, libvulkan1, libwayland-client0,
  libwayland-cursor0, libfontconfig1, libfreetype6, fonts-dejavu-core
 Recommends: mesa-vulkan-drivers, pipewire-alsa | libasound2-plugins
-Description: desktop metronome for everyday music practice
- Synthesized clicks, quarter-note tempo controls, configurable meters,
- per-beat sounds, tap tempo, and named configuration presets.
- Requires a graphical X11 or Wayland session and a Vulkan-capable driver.
+Description: Metronomo - keep time while practicing music
+ Practice rhythm with a steady pulse, adjustable tempo and volume,
+ configurable time signatures, and a different sound for each beat.
+ Tap the tempo and save your favorite configurations as named presets.
+ .
+ Runs in a graphical X11 or Wayland session with a Vulkan-capable driver.

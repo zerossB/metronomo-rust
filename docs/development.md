@@ -10,13 +10,13 @@ Metronomo uses Rust 2024, GPUI Kit for its native interface, CPAL for audio, and
 - A native compiler and linker for your operating system.
 - A graphical desktop session and a compatible graphics driver.
 
-On Linux, GPUI Kit enables both X11 and Wayland. Building requires `pkg-config` and development libraries for Fontconfig, FreeType, XKB, X11, and Wayland. Running requires a Vulkan-capable graphics driver. CPAL also requires the ALSA development library (`libasound2-dev` on Ubuntu/Debian). The shared check script additionally uses Python 3.11+ and `desktop-file-validate` (`desktop-file-utils` on Ubuntu). Package names vary by distribution.
+On Linux, GPUI Kit enables both X11 and Wayland. Building requires `pkg-config` and development libraries for Fontconfig, FreeType, XKB, X11, and Wayland. Running requires a Vulkan-capable graphics driver. CPAL also requires the ALSA development library (`libasound2-dev` on Ubuntu/Debian). The shared check script additionally uses Python 3.11+, `desktop-file-validate` (`desktop-file-utils` on Ubuntu), and `appstreamcli` (`appstream`). Package names vary by distribution.
 
 On Ubuntu 24.04/26.04, install the native build dependencies and development-check tools:
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y build-essential pkg-config python3 desktop-file-utils \
+sudo apt-get install -y build-essential pkg-config python3 desktop-file-utils appstream \
   libasound2-dev libfontconfig1-dev libfreetype-dev libxkbcommon-dev \
   libxkbcommon-x11-dev libx11-xcb-dev libwayland-dev
 ```

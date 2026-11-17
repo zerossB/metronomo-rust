@@ -1,3 +1,12 @@
+metronomo (0.1.2-1) unstable; urgency=medium
+
+  * Align the Cargo, Debian, and GitHub release versions.
+  * Add AppStream metadata, localized descriptions, and scalable/PNG icons.
+  * Update dirs to version 7 and reuse trusted CI compilation caches.
+  * Validate package metadata and installation on Ubuntu 24.04 and 26.04.
+
+ -- Guilherme Haynes Howe <zerossb@gmail.com>  Tue, 17 Nov 2026 20:39:58 -0300
+
 metronomo (0.1.0-1) unstable; urgency=medium
 
   * Prepare the first Linux amd64 package.

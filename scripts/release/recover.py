@@ -28,7 +28,7 @@ def main():
     if not args.tag.startswith("v") or not re.fullmatch(VERSION_PATTERN, args.tag[1:]):
         parser.error("Expected a version tag")
     repo = os.environ["GH_REPO"]
-    commit = subprocess.check_output(["git", "rev-parse", f"{args.tag}^{{commit}}"], text=True).strip()
+    commit = subprocess.check_output(["git", "rev-parse", f"refs/tags/{args.tag}^{{commit}}"], text=True).strip()
     subprocess.run(["git", "merge-base", "--is-ancestor", commit, "origin/main"], check=True)
     run = json.loads(subprocess.check_output(["gh", "api", f"repos/{repo}/actions/runs/{args.run_id}"]))
     jobs = json.loads(subprocess.check_output(["gh", "api", f"repos/{repo}/actions/runs/{args.run_id}/jobs?filter=latest&per_page=100"]))["jobs"]

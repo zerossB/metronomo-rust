@@ -1,6 +1,7 @@
 #!/usr/bin/make -f
 
 export CARGO_TARGET_DIR ?= $(CURDIR)/target
+RELEASE_VERSION := $(shell python3 scripts/release/version.py --field version)
 
 %:
 	dh $@
@@ -25,7 +26,7 @@ override_dh_auto_install:
 	install -Dm644 packaging/linux/desktop/metronomo.svg debian/metronomo/usr/share/icons/hicolor/scalable/apps/metronomo.svg
 	install -Dm644 LICENSE debian/metronomo/usr/share/doc/metronomo/LICENSE
 	install -Dm644 README.md debian/metronomo/usr/share/doc/metronomo/README.md
-	install -Dm644 docs/releases/0.1.0.md debian/metronomo/usr/share/doc/metronomo/release-notes.md
+	install -Dm644 docs/releases/$(RELEASE_VERSION).md debian/metronomo/usr/share/doc/metronomo/release-notes.md
 	install -Dm644 debian/third-party-notices.txt debian/metronomo/usr/share/doc/metronomo/third-party-notices.txt
 	install -Dm644 debian/build-provenance.json debian/metronomo/usr/share/doc/metronomo/build-provenance.json
 	cp -a docs debian/metronomo/usr/share/doc/metronomo/docs

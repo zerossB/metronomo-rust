@@ -11,6 +11,7 @@ import subprocess
 import tarfile
 
 from source_fingerprint import fingerprint
+from version import release_metadata
 
 ROOT = Path(__file__).resolve().parents[2]
 SCENARIOS = ("ubuntu-24.04-x11", "ubuntu-24.04-wayland", "ubuntu-26.04-x11", "ubuntu-26.04-wayland")
@@ -114,13 +115,14 @@ def main():
     parser.add_argument("--evidence", type=Path, default=ROOT / "dist" / "evidence")
     parser.add_argument("--require-ready", action="store_true", help="Fail unless every acceptance criterion has evidence")
     args = parser.parse_args()
+    metadata = release_metadata(ROOT)
     package = args.package.resolve()
     fields = subprocess.check_output(["dpkg-deb", "-f", str(package), "Package", "Version", "Architecture"], text=True)
-    if fields.splitlines() != ["Package: metronomo", "Version: 0.1.0-1", "Architecture: amd64"]:
+    if fields.splitlines() != ["Package: metronomo", f"Version: {metadata['package_version']}", "Architecture: amd64"]:
         raise SystemExit("Unexpected package identity: " + fields)
-    output = ROOT / "dist" / "0.1.0"
+    output = ROOT / metadata["release_dir"]
     output.mkdir(parents=True, exist_ok=True)
-    for source, name in ((package, package.name), (ROOT / "docs/releases/0.1.0.md", "RELEASE-NOTES.md"),
+    for source, name in ((package, package.name), (ROOT / "docs/releases" / f"{metadata['version']}.md", "RELEASE-NOTES.md"),
                          (ROOT / "docs/validation/report.md", "VALIDATION.md"), (ROOT / "LICENSE", "LICENSE")):
         shutil.copy2(source, output / name)
     for suffix in ("buildinfo", "changes"):
@@ -140,7 +142,7 @@ def main():
     patch = subprocess.check_output(["git", "diff", "--binary", "HEAD"], cwd=ROOT)
     (output / "source.patch").write_bytes(patch)
     paths = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=ROOT).decode().split("\0")
-    paths = sorted(set(p for p in paths if p and (p.startswith(("src/", "scripts/", "packaging/", "docs/"))
+    paths = sorted(set(p for p in paths if p and (p.startswith(("src/", "scripts/", "packaging/", "docs/", ".github/"))
                        or p in ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "README.md", "LICENSE", "CHANGELOG.md", ".gitignore"))))
     source_manifest = "".join(f"{digest(ROOT / p)}  {p}\n" for p in paths if (ROOT / p).is_file())
     (output / "SOURCE-SHA256SUMS").write_text(source_manifest)
@@ -149,7 +151,7 @@ def main():
             if (ROOT / path).is_file():
                 archive.add(ROOT / path, arcname=path, recursive=False)
     manifest = {
-        "version": "0.1.0", "package_version": "0.1.0-1", "commit": commit,
+        "version": metadata["version"], "package_version": metadata["package_version"], "commit": commit,
         "working_tree_dirty": bool(patch) or bool(subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard"], cwd=ROOT)),
         "source_manifest_sha256": hashlib.sha256(source_manifest.encode()).hexdigest(),
         "source_sha256": source_sha256, "package_build": provenance,

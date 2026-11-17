@@ -1,0 +1,38 @@
+name: Set up Linux build
+description: Install native dependencies and the pinned Rust toolchain, then cache and fetch Cargo dependencies.
+
+inputs:
+  cache-prefix:
+    description: Separate test and release build caches
+    default: checks
+
+runs:
+  using: composite
+  steps:
+    - name: Install Linux dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          build-essential ca-certificates debhelper dpkg-dev pkg-config python3 git \
+          desktop-file-utils libasound2-dev libfontconfig1-dev libfreetype-dev \
+          libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libwayland-dev
+
+    - name: Install pinned Rust toolchain
+      shell: bash
+      run: |
+        rust_toolchain="$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')"
+        rustup toolchain install "$rust_toolchain" --profile minimal --component rustfmt --component clippy
+
+    - name: Cache Cargo dependencies and build output
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-${{ runner.arch }}-${{ inputs.cache-prefix }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+
+    - name: Fetch locked dependencies
+      shell: bash
+      run: cargo fetch --locked

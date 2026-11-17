@@ -1,4 +1,4 @@
-# Preparing v0.1.0 for Linux
+# Preparing a Linux release
 
 The release targets Ubuntu 24.04 and 26.04 amd64. Build on **24.04** so the
 executable does not acquire a newer glibc requirement from the development host.
@@ -93,7 +93,7 @@ Source packaging metadata lives in `packaging/linux/debian/`; desktop integratio
 files live in `packaging/linux/desktop/`. The build script copies release inputs
 into `target/deb-build.*/source/` and creates the standard top-level `debian/`
 directory there before invoking `dpkg-buildpackage`. Generated packages go to
-`dist/build/`, and the assembled delivery goes to `dist/0.1.0/`.
+`dist/build/`, and the assembled delivery goes to `dist/<version>/`.
 
 For clean installation/lifecycle checks, run the following once for each version,
 replacing `24.04` with `26.04` for the second run. This script deliberately refuses
@@ -140,5 +140,59 @@ from the final release commit before publication.
 After all evidence passes, use `--require-ready` to make pending acceptance fail
 the preparation command. Update release notes and the validation report, change
 the two README roadmap checkboxes only after their corresponding acceptance
-criteria pass, and regenerate/check the complete delivery. Publication, hosting,
-and remote CI are separate from this local preparation workflow.
+criteria pass, and regenerate/check the complete delivery. Publication and hosting
+are handled by the tagged workflow described below.
+
+## GitHub Actions and version tags
+
+`.github/workflows/ci.yml` runs `scripts/check.sh` for every pull request,
+including new commits and reopened PRs. It can also be run manually from Actions.
+The shared setup action installs native Linux dependencies, reads the pinned Rust
+toolchain, restores the Cargo/build cache, and fetches locked dependencies before
+running the offline checks. Tests that require real audio or a desktop remain
+opt-in; CI runs the device-free UI and audio tests.
+
+`.github/workflows/release.yml` runs when a tag matching `v[0-9]*` is pushed. To
+prepare a new version, for example `0.2.0`:
+
+1. Update `package.version` in `Cargo.toml` and refresh `Cargo.lock` with
+   `cargo check`.
+2. Add a matching entry to `packaging/linux/debian/changelog`, for example
+   `metronomo (0.2.0-1) unstable; urgency=medium`.
+3. Add `docs/releases/0.2.0.md` and update `CHANGELOG.md` and the validation report.
+4. Run the development checks, commit the version changes, then push the commit
+   and its tag:
+
+   ```sh
+   git tag -a v0.2.0 -m "Metronomo 0.2.0"
+   git push origin HEAD
+   git push origin v0.2.0
+   ```
+
+The workflow rejects mismatched tag/Cargo/Debian versions and missing release
+notes before compiling. Prerelease tags such as `v0.2.0-rc.1` require Cargo version
+`0.2.0-rc.1`, Debian version `0.2.0~rc.1-1`, and notes named `0.2.0-rc.1.md`;
+they are published with GitHub's prerelease flag.
+
+The build runs on Ubuntu 24.04 amd64, repeats development checks, runs the
+optimized offline renderer measurements, and builds the `.deb`. Clean Ubuntu
+24.04 and 26.04 containers then check installation, shared-library resolution,
+reinstallation, removal, and preference-marker retention. A failed check prevents
+publication. Failure evidence is retained as an Actions artifact when available.
+
+After success, a separate job publishes a GitHub Release with:
+
+- `metronomo_<debian-version>_amd64.deb`;
+- `metronomo-<version>-linux-amd64.tar.gz`, containing the complete delivery,
+  licenses, source archive, manifest, validation report, and automated evidence;
+- `SHA256SUMS` for both downloadable assets.
+
+The workflow uses the repository's automatic `GITHUB_TOKEN`; no personal token
+or Packages credentials are needed. Only the publication job requests
+`contents: write`. Third-party Actions are pinned to commit SHAs. Releases are
+created for existing tags and existing releases are not overwritten by retries.
+
+Tagged builds are distributed automatically. Their manifest still records missing
+desktop/audio acceptance evidence, and automated container checks do not approve
+those measurements. `--require-ready` remains available for a local delivery
+that must satisfy the full acceptance protocol before distribution.

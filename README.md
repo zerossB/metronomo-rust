@@ -115,6 +115,13 @@ Launch **Metronomo** from the application menu or run `metronomo`. The installed
 
 To generate the package from source, follow the [Ubuntu 24.04 baseline build and release procedure](docs/release.md). The output includes the `.deb`, release notes, checksums, evidence, and a manifest. `ready_to_publish` stays false while acceptance evidence is missing or stale.
 
+GitHub Actions runs the development checks on every pull request. Pushing a
+version tag such as `v0.1.0` runs the checks, builds the Linux amd64 package,
+verifies clean installation on Ubuntu 24.04 and 26.04, and publishes the `.deb`,
+a complete release bundle, and checksums in **GitHub Releases**. Tags must match
+`Cargo.toml`, the Debian changelog, and version-specific release notes. See the
+[tagged release instructions](docs/release.md#github-actions-and-version-tags).
+
 ### Audio and graphics troubleshooting
 
 - If Start reports an output failure, select a working default output in your desktop sound settings, connect speakers/headphones, and press Start again. The app does not select devices or restart the system audio server.
@@ -217,6 +224,9 @@ The audio callback schedules beats independently of GPUI. The visual indicator u
 Build, packaging, and validation files are grouped by purpose:
 
 ```text
+.github/
+├── workflows/               # PR checks and tagged GitHub Releases
+└── actions/setup/           # Shared Linux dependencies, toolchain, and cache
 packaging/
 ├── linux/
 │   ├── desktop/             # Application menu entry and icon

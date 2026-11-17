@@ -16,7 +16,11 @@ def release_metadata(root=ROOT, tag=None):
     if not re.fullmatch(VERSION_PATTERN, version):
         raise ValueError(f"Unsupported release version: {version}")
     if tag is not None and tag != f"v{version}":
-        raise ValueError(f"Tag {tag!r} does not match Cargo.toml version v{version}")
+        raise ValueError(
+            f"Tag {tag!r} does not match Cargo.toml version v{version}. "
+            "Prepare matching Cargo.toml, Cargo.lock, Debian changelog, and release notes "
+            "on main before creating the tag. An existing immutable release requires a new version."
+        )
     changelog = (root / "packaging/linux/debian/changelog").read_text()
     match = re.match(r"metronomo \(([^)]+)\)", changelog)
     expected_upstream = version.replace("-", "~", 1)

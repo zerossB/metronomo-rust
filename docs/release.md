@@ -189,14 +189,30 @@ prepare a new version, for example `0.2.0`:
 2. Add a matching entry to `packaging/linux/debian/changelog`, for example
    `metronomo (0.2.0-1) unstable; urgency=medium`.
 3. Add `docs/releases/0.2.0.md` and update `CHANGELOG.md` and the validation report.
-4. Run the development checks, commit the version changes, then push the commit
-   and its tag:
+4. Validate the intended tag locally before creating it, then run the
+   development checks:
 
    ```sh
+   python3 scripts/release/version.py --tag v0.2.0
+   ./scripts/check.sh
+   ```
+
+5. Commit the version changes, merge them into `main` through a checked PR,
+   then create the tag from the updated `main`:
+
+   ```sh
+   git switch main
+   git pull --ff-only origin main
+   python3 scripts/release/version.py --tag v0.2.0
    git tag -a v0.2.0 -m "Metronomo 0.2.0"
-   git push origin HEAD
    git push origin v0.2.0
    ```
+
+Let the workflow create the draft, attach the installers, and publish the
+release. Do not publish an empty release through GitHub's release form first:
+immutable releases cannot receive missing installers afterwards. If a tag was
+created with the wrong source version and its release is already immutable,
+prepare the next unused version; retrying the old run cannot change its source.
 
 The workflow rejects mismatched tag/Cargo/Debian versions and missing release
 notes before compiling. Prerelease tags such as `v0.2.0-rc.1` require Cargo version

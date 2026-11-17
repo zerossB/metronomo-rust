@@ -127,11 +127,13 @@ docs/        # Guides, screenshots, release notes, and validation reports
 `target/` contains generated build output. `dist/` contains packages, release
 bundles, and validation evidence. Both are ignored by Git.
 
-Pushing a tag such as `v0.1.0` tests the application, builds the `.deb` on
+Pushing a prepared version tag tests the application, builds the `.deb` on
 Ubuntu 24.04, checks installation on Ubuntu 24.04 and 26.04, and publishes the
 installer, release bundle, and checksums. Tag, Cargo, and Debian versions must
 match. Follow the [release guide](docs/release.md#github-actions-and-version-tags)
-to prepare a version.
+to prepare and merge the version changes before creating its tag. Let the
+workflow publish the release after uploading its installers; publishing an
+empty release first locks it before the files can be attached.
 
 ## Documentation
 

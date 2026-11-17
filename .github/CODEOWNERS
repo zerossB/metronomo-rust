@@ -1,0 +1,9 @@
+# Release, dependency, and automation changes are owned by the maintainer.
+/.github/ @zerossB
+/scripts/release/ @zerossB
+/scripts/validation/install-deb.sh @zerossB
+/packaging/ @zerossB
+/Cargo.toml @zerossB
+/Cargo.lock @zerossB
+/rust-toolchain.toml @zerossB
+/SECURITY.md @zerossB

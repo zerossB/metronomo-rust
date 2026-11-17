@@ -192,6 +192,17 @@ or Packages credentials are needed. Only the publication job requests
 `contents: write`. Third-party Actions are pinned to commit SHAs. Releases are
 created for existing tags and existing releases are not overwritten by retries.
 
+The release commit must be reachable from `main`. Only the maintainer may create
+`v*` tags, and version tags are protected against updates and deletion. The
+workflow creates a draft, uploads all assets, and then publishes it so immutable
+release protection locks a complete delivery. A failed upload leaves a draft
+for investigation; the workflow does not overwrite an existing release.
+
+Changes to `main` go through pull requests and required checks. Published
+releases cannot be repaired by replacing their assets or moving their tags;
+publish a new version instead. See [SECURITY.md](../SECURITY.md) and
+[CONTRIBUTING.md](../CONTRIBUTING.md) for the security and contribution policies.
+
 Tagged builds are distributed automatically. Their manifest still records missing
 desktop/audio acceptance evidence, and automated container checks do not approve
 those measurements. `--require-ready` remains available for a local delivery

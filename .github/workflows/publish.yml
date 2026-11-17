@@ -1,0 +1,85 @@
+name: Recover release publication
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish
+        required: true
+      run-id:
+        description: Original Release run with a successful build
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-refs/tags/${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Check out trusted publication tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Validate source workflow and original build
+        id: source
+        env:
+          SOURCE_RUN_ID: ${{ inputs.run-id }}
+        run: |
+          python3 scripts/release/recover.py --run-id "$SOURCE_RUN_ID" \
+            --tag "$RELEASE_TAG" --github-output "$GITHUB_OUTPUT"
+
+      - name: Recover successful build artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run-id }}
+          repository: ${{ github.repository }}
+          name: linux-release
+          path: delivery
+
+      - name: Verify delivery and expected source commit
+        env:
+          EXPECTED_COMMIT: ${{ steps.source.outputs.commit }}
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          cd delivery
+          sha256sum --check SHA256SUMS
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          manifest = json.loads(Path('manifest.json').read_text())
+          assert manifest['commit'] == os.environ['EXPECTED_COMMIT']
+          assert manifest['version'] == os.environ['RELEASE_VERSION']
+          PY
+
+      - name: Assemble verified downloads
+        env:
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          mkdir assets
+          cp delivery/*.deb assets/
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+            -czf "assets/metronomo-$RELEASE_VERSION-linux-amd64.tar.gz" -C delivery .
+          cd assets
+          sha256sum ./*.deb ./*.tar.gz > SHA256SUMS
+
+      - name: Publish missing assets without rebuilding
+        run: |
+          python3 scripts/release/publish.py --tag "$RELEASE_TAG" \
+            --assets assets --notes delivery/RELEASE-NOTES.md

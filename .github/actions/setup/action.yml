@@ -38,7 +38,7 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: target/debug
-        key: cargo-build-v3-${{ runner.os }}-${{ runner.arch }}-debug-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.toml', 'Cargo.lock') }}-${{ hashFiles('src/**') }}
+        key: cargo-build-v3-${{ runner.os }}-${{ runner.arch }}-debug-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.toml', 'Cargo.lock') }}-${{ hashFiles('src/**', '.github/actions/setup/**', '.github/workflows/*.yml', 'packaging/linux/debian/rules', 'scripts/release/package-deb.sh', 'scripts/validation/audio.sh') }}
         restore-keys: |
           cargo-build-v3-${{ runner.os }}-${{ runner.arch }}-debug-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.toml', 'Cargo.lock') }}-
           cargo-build-v3-${{ runner.os }}-${{ runner.arch }}-debug-${{ hashFiles('rust-toolchain.toml') }}-
@@ -48,7 +48,7 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: target/release
-        key: cargo-build-v3-${{ runner.os }}-${{ runner.arch }}-release-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.toml', 'Cargo.lock') }}-${{ hashFiles('src/**') }}
+        key: cargo-build-v3-${{ runner.os }}-${{ runner.arch }}-release-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.toml', 'Cargo.lock') }}-${{ hashFiles('src/**', '.github/actions/setup/**', '.github/workflows/*.yml', 'packaging/linux/debian/rules', 'scripts/release/package-deb.sh', 'scripts/validation/audio.sh') }}
         restore-keys: |
           cargo-build-v3-${{ runner.os }}-${{ runner.arch }}-release-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.toml', 'Cargo.lock') }}-
           cargo-build-v3-${{ runner.os }}-${{ runner.arch }}-release-${{ hashFiles('rust-toolchain.toml') }}-

@@ -2,12 +2,15 @@
 Type=Application
 Name=Metronomo
 GenericName=Metronome
+GenericName[pt_BR]=Metrônomo
 Comment=Practice music with a steady pulse
+Comment[pt_BR]=Pratique música com um pulso constante
 Exec=metronomo
 TryExec=metronomo
-Icon=metronomo
+Icon=com.haynestec.metronomo
 Terminal=false
 Categories=AudioVideo;Audio;Music;
 Keywords=metronome;tempo;practice;music;
+Keywords[pt_BR]=metrônomo;andamento;ritmo;prática;música;
 StartupNotify=false
 StartupWMClass=com.haynestec.metronomo

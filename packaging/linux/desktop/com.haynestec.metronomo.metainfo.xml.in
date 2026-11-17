@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.haynestec.metronomo</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Metronomo</name>
+  <summary>Keep time while practicing music</summary>
+  <summary xml:lang="pt_BR">Pratique música com um pulso constante</summary>
+  <description>
+    <p>Metronomo helps you practice rhythm with a clear, steady pulse. Adjust the tempo and volume, choose the time signature, and set a different sound for each beat.</p>
+    <p xml:lang="pt_BR">Metronomo ajuda você a praticar ritmo com um pulso claro e constante. Ajuste o andamento e o volume, escolha a fórmula de compasso e defina um som diferente para cada batida.</p>
+    <p>Tap the tempo, save your favorite configurations as named presets, and choose a light or dark appearance. Your preferences are saved locally.</p>
+    <p xml:lang="pt_BR">Marque o andamento com toques, salve suas configurações favoritas como predefinições e escolha a aparência clara ou escura. Suas preferências são salvas localmente.</p>
+  </description>
+  <developer id="com.haynestec">
+    <name>Guilherme Haynes Howe</name>
+  </developer>
+  <launchable type="desktop-id">com.haynestec.metronomo.desktop</launchable>
+  <icon type="stock">com.haynestec.metronomo</icon>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Music</category>
+  </categories>
+  <url type="homepage">https://github.com/zerossB/metronomo-rust</url>
+  <url type="bugtracker">https://github.com/zerossB/metronomo-rust/issues</url>
+  <url type="help">https://github.com/zerossB/metronomo-rust/blob/main/docs/usage.md</url>
+  <url type="vcs-browser">https://github.com/zerossB/metronomo-rust</url>
+  <provides>
+    <binary>metronomo</binary>
+  </provides>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Tempo and beat controls</caption>
+      <caption xml:lang="pt_BR">Controles de andamento e batidas</caption>
+      <image type="source" width="1200" height="1560">https://raw.githubusercontent.com/zerossB/metronomo-rust/main/docs/images/metronomo-dark.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Saved rhythm presets</caption>
+      <caption xml:lang="pt_BR">Predefinições de ritmo salvas</caption>
+      <image type="source" width="1200" height="1560">https://raw.githubusercontent.com/zerossB/metronomo-rust/main/docs/images/metronomo-presets.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="@VERSION@" date="@DATE@" type="@RELEASE_TYPE@">
+      <url>https://github.com/zerossB/metronomo-rust/releases/tag/v@VERSION@</url>
+    </release>
+  </releases>
+</component>

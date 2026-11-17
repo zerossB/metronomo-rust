@@ -19,9 +19,16 @@ printf '%s\n' 'path-include=/usr/share/doc/metronomo' 'path-include=/usr/share/d
     > /etc/dpkg/dpkg.cfg.d/zz-metronomo-validation
 apt-get update
 apt-get install -y --no-install-recommends "$package"
+apt-get install -y --no-install-recommends appstream desktop-file-utils
 test -x /usr/bin/metronomo
 test -f /usr/share/applications/com.haynestec.metronomo.desktop
-test -f /usr/share/icons/hicolor/scalable/apps/metronomo.svg
+test -f /usr/share/icons/hicolor/scalable/apps/com.haynestec.metronomo.svg
+for size in 64 128 256; do
+    test -s "/usr/share/icons/hicolor/${size}x${size}/apps/com.haynestec.metronomo.png"
+done
+test -s /usr/share/metainfo/com.haynestec.metronomo.metainfo.xml
+desktop-file-validate /usr/share/applications/com.haynestec.metronomo.desktop
+appstreamcli validate --no-net --strict /usr/share/metainfo/com.haynestec.metronomo.metainfo.xml
 test -s /usr/share/doc/metronomo/third-party-notices.txt
 test -f /usr/share/doc/metronomo/build-provenance.json
 test -f /usr/share/doc/metronomo/docs/release.md
@@ -42,6 +49,11 @@ cmp "$XDG_CONFIG_HOME/expected" "$XDG_CONFIG_HOME/metronomo/settings.json"
 apt-get remove -y metronomo
 test ! -e /usr/bin/metronomo
 test ! -e /usr/share/applications/com.haynestec.metronomo.desktop
+test ! -e /usr/share/metainfo/com.haynestec.metronomo.metainfo.xml
+test ! -e /usr/share/icons/hicolor/scalable/apps/com.haynestec.metronomo.svg
+for size in 64 128 256; do
+    test ! -e "/usr/share/icons/hicolor/${size}x${size}/apps/com.haynestec.metronomo.png"
+done
 cmp "$XDG_CONFIG_HOME/expected" "$XDG_CONFIG_HOME/metronomo/settings.json"
 sha256sum "$package" > "$evidence/package.sha256"
 cp /etc/os-release "$evidence/os-release"

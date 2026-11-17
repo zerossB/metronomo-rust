@@ -12,6 +12,7 @@ override_dh_auto_configure:
 	desktop-file-validate packaging/linux/desktop/metronomo.desktop
 
 override_dh_auto_build:
+	./scripts/validation/audio.sh renderer
 	cargo build --release --locked --offline
 
 # The full suite is run separately by scripts/check.sh; native/audio validation is opt-in.

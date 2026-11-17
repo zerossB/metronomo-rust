@@ -9,8 +9,15 @@ fi
 release_package_file="$(python3 scripts/release/version.py --field package_file)"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target/ubuntu-24.04}"
 mkdir -p dist/build target
-build_area="$(mktemp -d "$PWD/target/deb-build.XXXXXX")"
+# A stable source path keeps native build flags and Cargo fingerprints reusable.
+# Serialize local invocations so one build cannot delete another's staging tree.
+exec 9>"$PWD/target/deb-build.lock"
+flock 9
+build_area="$PWD/target/deb-build"
+rm -rf -- "$build_area"
+mkdir -p "$build_area"
 trap 'rm -rf "$build_area"' EXIT
+export METRONOMO_VALIDATION_DIR="${METRONOMO_VALIDATION_DIR:-$PWD/dist/evidence}"
 python3 scripts/release/stage_package_source.py "$build_area/source"
 (
     cd "$build_area/source"
